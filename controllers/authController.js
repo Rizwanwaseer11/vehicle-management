@@ -34,3 +34,13 @@ exports.login = async (req, res) => {
     token: generateToken(user._id)
   });
 };
+
+exports.logout = async (req, res) => {
+  // If you're using cookies for JWT storage
+  res.cookie('token', '', {
+    httpOnly: true,
+    expires: new Date(0),
+  });
+
+  res.status(200).json({ message: 'Logged out successfully' });
+};
