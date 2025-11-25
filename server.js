@@ -33,6 +33,8 @@ const REDIS_URL = process.env.REDIS_URL;
   app.use(helmet());
   app.use(compression());
   app.use(express.json());
+  app.use(express.urlencoded({ extended: true }));
+
   app.use(morgan('combined', { stream: logger.stream }));
   app.use(rateLimit({ windowMs: 60*1000, max: 200 }));
 
