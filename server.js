@@ -38,8 +38,14 @@ const REDIS_URL = process.env.REDIS_URL;
   app.use(morgan('combined', { stream: logger.stream }));
   app.use(rateLimit({ windowMs: 60*1000, max: 200 }));
 
-  app.get('/', (req, res) => res.write('API is running'));
+app.get('/', (req, res) => {
 
+  // Set plain text response headers
+  res.setHeader('Content-Type', 'text/plain');
+
+  // Send simple text message
+  res.send('Welcome to the server!');
+});
   app.use('/api', routes);
 
   app.get('/health', (req, res) => res.json({ ok: true }));
