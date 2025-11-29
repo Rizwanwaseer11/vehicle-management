@@ -38,6 +38,8 @@ const REDIS_URL = process.env.REDIS_URL;
   app.use(morgan('combined', { stream: logger.stream }));
   app.use(rateLimit({ windowMs: 60*1000, max: 200 }));
 
+  app.get('/', (req, res) => res.write('API is running'));
+
   app.use('/api', routes);
 
   app.get('/health', (req, res) => res.json({ ok: true }));
@@ -49,14 +51,14 @@ const REDIS_URL = process.env.REDIS_URL;
 
   const io = new Server(server, { cors: { origin: '*' } });
 
-  if (REDIS_URL) {
-    const pubClient = new Redis(REDIS_URL);
-    const subClient = pubClient.duplicate();
-    io.adapter(createAdapter(pubClient, subClient));
-    logger.info('Socket.IO Redis adapter enabled');
-  }
+  // if (REDIS_URL) {
+  //   const pubClient = new Redis(REDIS_URL);
+  //   const subClient = pubClient.duplicate();
+  //   io.adapter(createAdapter(pubClient, subClient));
+  //   logger.info('Socket.IO Redis adapter enabled');
+  // }
 
-  socketHandler(io);
+  // socketHandler(io);
 
   server.listen(PORT, () => logger.info(`Worker PID ${process.pid} listening on ${PORT}`));
 })();
