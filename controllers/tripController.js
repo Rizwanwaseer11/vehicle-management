@@ -25,7 +25,12 @@ exports.createTrip = async (req, res) => {
       }
     }
 
-    if (!totalKm ) {
+    if (totalkm === undefined || totalkm === null) {
+  return res.status(400).json({
+    error: "Total kilometers are required and should not be empty."
+  });
+}
+
       return res.status(400).json({ error: "Total kilometers are required and should not be empty." });
     }
 
