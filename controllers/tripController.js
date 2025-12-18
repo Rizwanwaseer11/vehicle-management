@@ -1,10 +1,52 @@
 const Trip = require('../models/Trip');
 
 exports.createTrip = async (req, res) => {
-  const { driver, routeName, stops } = req.body;
-  const trip = await Trip.create({ driver, routeName, stops });
-  res.status(201).json(trip);
+  try {
+    const { driver, routeName, stops, totalKm, starttime, endtime } = req.body;
+
+    // Validation
+    if (!driver || typeof driver !== 'string') {
+      return res.status(400).json({ error: "Driver is required and should be a string." });
+    }
+
+    if (!routeName || typeof routeName !== 'string') {
+      return res.status(400).json({ error: "Route name is required and should be a string." });
+    }
+
+    if (!Array.isArray(stops) || stops.length === 0) {
+      return res.status(400).json({ error: "Stops are required and should be a non-empty array." });
+    } else {
+      // Optional: Validate each stop object
+      for (let i = 0; i < stops.length; i++) {
+        const stop = stops[i];
+        if (!stop.name || !stop.latitude || !stop.longitude) {
+          return res.status(400).json({ error: `Each stop must have name, latitude, and longitude. Error at stop index ${i}` });
+        }
+      }
+    }
+
+    if (!totalKm || typeof totalKm !== 'number') {
+      return res.status(400).json({ error: "Total kilometers are required and should be a number." });
+    }
+
+    if (!starttime || isNaN(Date.parse(starttime))) {
+      return res.status(400).json({ error: "Start time is required and should be a valid date/time." });
+    }
+
+    if (!endtime || isNaN(Date.parse(endtime))) {
+      return res.status(400).json({ error: "End time is required and should be a valid date/time." });
+    }
+
+    // Create the trip
+    const trip = await Trip.create({ driver, routeName, stops, totalKm, starttime, endtime });
+
+    return res.status(201).json(trip);
+  } catch (error) {
+    console.error("Error creating trip:", error);
+    return res.status(500).json({ error: "Something went wrong while creating the trip." });
+  }
 };
+
 
 exports.getAllTrips = async (req, res) => {
   const trips = await Trip.find().populate('driver stops.passengers', 'name email profilePic');
