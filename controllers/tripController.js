@@ -1,5 +1,5 @@
 const Trip = require('../models/Trip');
-const User= require(../models/User");
+const User= require('../models/User');
 exports.createTrip = async (req, res) => {
   try {
     const { driver, routeName, stops, totalKm, starttime, endtime } = req.body;
