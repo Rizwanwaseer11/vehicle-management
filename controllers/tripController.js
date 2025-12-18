@@ -28,3 +28,31 @@ exports.deleteTrip = async (req, res) => {
   if (!trip) return res.status(404).json({ message: 'Trip not found' });
   res.json({ message: 'Trip deleted successfully' });
 };
+
+exports.findAvailableDrivers= async (req, res) => {
+  try {
+    // 1️⃣ Find all active trips
+    const activeTripDrivers = await Trip.find({ isActive: true })
+      .distinct("driver");
+
+    // 2️⃣ Find drivers NOT assigned to active trips
+    const availableDrivers = await User.find({
+      role: "driver",
+      isActive: true,
+      status: "approved",
+      _id: { $nin: activeTripDrivers },
+    }).select("_id name email phone");
+
+    res.status(200).json({
+      success: true,
+      count: availableDrivers.length,
+      drivers: availableDrivers,
+    });
+  } catch (error) {
+    console.error("Available drivers error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch available drivers",
+    });
+  }
+};

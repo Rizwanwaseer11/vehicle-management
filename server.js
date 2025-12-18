@@ -44,7 +44,7 @@ app.get('/', (req, res) => {
   res.setHeader('Content-Type', 'text/plain');
 
   // Send simple text message
-  res.send('Welcome to the server!');
+  res.send('Welcome to the cab booking server!');
 });
   app.use('/api', routes);
 

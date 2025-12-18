@@ -1,3 +1,4 @@
+const { required } = require('joi');
 const mongoose = require('mongoose');
 
 const stopSchema = new mongoose.Schema({
@@ -13,7 +14,8 @@ const tripSchema = new mongoose.Schema({
   stops: [stopSchema],
   isActive: { type: Boolean, default: true },
   startTime: { type: Date },
-  endTime: { type: Date }
+  endTime: { type: Date },
+  totalkm: { type: Number, default: 0 ,required: true}
 }, { timestamps: true });
 
 module.exports = mongoose.model('Trip', tripSchema);
