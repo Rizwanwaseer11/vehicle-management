@@ -25,8 +25,8 @@ exports.createTrip = async (req, res) => {
       }
     }
 
-    if (!totalKm || typeof totalKm !== 'number') {
-      return res.status(400).json({ error: "Total kilometers are required and should be a number." });
+    if (!totalKm ) {
+      return res.status(400).json({ error: "Total kilometers are required and should not be empty." });
     }
 
     if (!starttime || isNaN(Date.parse(starttime))) {
