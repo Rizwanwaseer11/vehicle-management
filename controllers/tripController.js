@@ -71,11 +71,11 @@ exports.deleteTrip = async (req, res) => {
   res.json({ message: 'Trip deleted successfully' });
 };
 
-exports.findAvailableDrivers= async (req, res) => {
+// ----------------- FIND AVAILABLE DRIVERS -----------------
+exports.findAvailableDrivers = async (req, res) => {
   try {
     // 1️⃣ Find all active trips
-    const activeTripDrivers = await Trip.find({ isActive: true })
-      .distinct("driver");
+    const activeTripDrivers = await Trip.find({ isActive: true }).distinct("driver");
 
     // 2️⃣ Find drivers NOT assigned to active trips
     const availableDrivers = await User.find({
@@ -92,9 +92,6 @@ exports.findAvailableDrivers= async (req, res) => {
     });
   } catch (error) {
     console.error("Available drivers error:", error);
-    res.status(500).json({
-      success: false,
-      message: "Failed to fetch available drivers",
-    });
+    res.status(500).json({ success: false, message: "Failed to fetch available drivers" });
   }
 };
