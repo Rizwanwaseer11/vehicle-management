@@ -53,24 +53,6 @@ exports.getAllTrips = async (req, res) => {
   res.json(trips);
 };
 
-exports.getTripById = async (req, res) => {
-  const trip = await Trip.findById(req.params.id).populate('driver stops.passengers', 'name email profilePic');
-  if (!trip) return res.status(404).json({ message: 'Trip not found' });
-  res.json(trip);
-};
-
-exports.updateTrip = async (req, res) => {
-  const trip = await Trip.findByIdAndUpdate(req.params.id, req.body, { new: true });
-  if (!trip) return res.status(404).json({ message: 'Trip not found' });
-  res.json(trip);
-};
-
-exports.deleteTrip = async (req, res) => {
-  const trip = await Trip.findByIdAndDelete(req.params.id);
-  if (!trip) return res.status(404).json({ message: 'Trip not found' });
-  res.json({ message: 'Trip deleted successfully' });
-};
-
 // ----------------- FIND AVAILABLE DRIVERS -----------------
 exports.findAvailableDrivers = async (req, res) => {
   try {
@@ -95,3 +77,23 @@ exports.findAvailableDrivers = async (req, res) => {
     res.status(500).json({ success: false, message: "Failed to fetch available drivers" });
   }
 };
+
+exports.getTripById = async (req, res) => {
+  const trip = await Trip.findById(req.params.id).populate('driver stops.passengers', 'name email profilePic');
+  if (!trip) return res.status(404).json({ message: 'Trip not found' });
+  res.json(trip);
+};
+
+exports.updateTrip = async (req, res) => {
+  const trip = await Trip.findByIdAndUpdate(req.params.id, req.body, { new: true });
+  if (!trip) return res.status(404).json({ message: 'Trip not found' });
+  res.json(trip);
+};
+
+exports.deleteTrip = async (req, res) => {
+  const trip = await Trip.findByIdAndDelete(req.params.id);
+  if (!trip) return res.status(404).json({ message: 'Trip not found' });
+  res.json({ message: 'Trip deleted successfully' });
+};
+
+
