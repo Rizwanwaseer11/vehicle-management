@@ -1,55 +1,92 @@
 const Trip = require('../models/Trip');
-const User= require('../models/User');
+const User = require('../models/User');
+
 exports.createTrip = async (req, res) => {
   try {
-    const { driver, routeName, stops, totalKm, startTime, endTime } = req.body;
+    const { driver, routeName, stops, totalKm, startTime, endTime, bus } = req.body;
 
-    // Validation
+    // Driver
     if (!driver || typeof driver !== 'string') {
-      return res.status(400).json({ error: "Driver is required and should be a string." });
+      return res.status(400).json({ error: "Driver is required." });
     }
 
+    // Route name
     if (!routeName || typeof routeName !== 'string') {
-      return res.status(400).json({ error: "Route name is required and should be a string." });
+      return res.status(400).json({ error: "Route name is required." });
     }
 
+    // Stops
     if (!Array.isArray(stops) || stops.length === 0) {
-      return res.status(400).json({ error: "Stops are required and should be a non-empty array." });
-    } else {
-      // Optional: Validate each stop object
-      for (let i = 0; i < stops.length; i++) {
-        const stop = stops[i];
-        if (!stop.name || !stop.latitude || !stop.longitude) {
-          return res.status(400).json({ error: `Each stop must have name, latitude, and longitude. Error at stop index ${i}` });
-        }
+      return res.status(400).json({ error: "At least one stop is required." });
+    }
+
+    for (let i = 0; i < stops.length; i++) {
+      const { name, latitude, longitude } = stops[i];
+
+      if (!name) {
+        return res.status(400).json({ error: `Stop ${i + 1}: name is required.` });
+      }
+
+      if (latitude === undefined || longitude === undefined) {
+        return res.status(400).json({
+          error: `Stop ${i + 1}: latitude and longitude are required.`,
+        });
+      }
+
+      if (isNaN(Number(latitude)) || isNaN(Number(longitude))) {
+        return res.status(400).json({
+          error: `Stop ${i + 1}: latitude & longitude must be numbers.`,
+        });
       }
     }
 
-    if (totalKm === undefined || totalKm === null) {
-  return res.status(400).json({
-    error: "Total kilometers are required and should not be empty."
-  });
-}
+    // Total KM
+    if (totalKm === undefined || totalKm === null || isNaN(Number(totalKm))) {
+      return res.status(400).json({
+        error: "Total kilometers are required and must be a number.",
+      });
+    }
 
-    
-
+    // Time validation
     if (!startTime || isNaN(Date.parse(startTime))) {
-      return res.status(400).json({ error: "Start time is required and should be a valid date/time." });
+      return res.status(400).json({ error: "Valid startTime is required." });
     }
 
     if (!endTime || isNaN(Date.parse(endTime))) {
-      return res.status(400).json({ error: "End time is required and should be a valid date/time." });
+      return res.status(400).json({ error: "Valid endTime is required." });
     }
 
-    // Create the trip
-    const trip = await Trip.create({ driver, routeName, stops, totalKm, starttime, endtime });
+    if (new Date(endTime) <= new Date(startTime)) {
+      return res.status(400).json({
+        error: "End time must be after start time.",
+      });
+    }
+
+    // Create trip (✅ USE CORRECT VARIABLE NAMES)
+    const trip = await Trip.create({
+      driver,
+      routeName,
+      stops: stops.map(s => ({
+        name: s.name,
+        latitude: Number(s.latitude),
+        longitude: Number(s.longitude),
+      })),
+      totalKm: Number(totalKm),
+      startTime,
+      endTime,
+      bus: bus || null,
+    });
 
     return res.status(201).json(trip);
+
   } catch (error) {
     console.error("Error creating trip:", error);
-    return res.status(500).json({ error: "Something went wrong while creating the trip." });
+    return res.status(500).json({
+      error: "Something went wrong while creating the trip.",
+    });
   }
 };
+
 
 
 exports.getAllTrips = async (req, res) => {
