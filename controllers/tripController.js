@@ -31,8 +31,7 @@ exports.createTrip = async (req, res) => {
   });
 }
 
-      return res.status(400).json({ error: "Total kilometers are required and should not be empty." });
-    }
+    
 
     if (!starttime || isNaN(Date.parse(starttime))) {
       return res.status(400).json({ error: "Start time is required and should be a valid date/time." });
