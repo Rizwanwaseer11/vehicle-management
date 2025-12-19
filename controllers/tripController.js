@@ -2,7 +2,7 @@ const Trip = require('../models/Trip');
 const User= require('../models/User');
 exports.createTrip = async (req, res) => {
   try {
-    const { driver, routeName, stops, totalKm, starttime, endtime } = req.body;
+    const { driver, routeName, stops, totalKm, startTime, endTime } = req.body;
 
     // Validation
     if (!driver || typeof driver !== 'string') {
@@ -25,7 +25,7 @@ exports.createTrip = async (req, res) => {
       }
     }
 
-    if (totalkm === undefined || totalkm === null) {
+    if (totalKm === undefined || totalKm === null) {
   return res.status(400).json({
     error: "Total kilometers are required and should not be empty."
   });
@@ -33,11 +33,11 @@ exports.createTrip = async (req, res) => {
 
     
 
-    if (!starttime || isNaN(Date.parse(starttime))) {
+    if (!startTime || isNaN(Date.parse(startTime))) {
       return res.status(400).json({ error: "Start time is required and should be a valid date/time." });
     }
 
-    if (!endtime || isNaN(Date.parse(endtime))) {
+    if (!endTime || isNaN(Date.parse(endTime))) {
       return res.status(400).json({ error: "End time is required and should be a valid date/time." });
     }
 
