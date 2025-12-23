@@ -135,4 +135,5 @@ exports.deleteTrip = async (req, res) => {
   const trip = await Trip.findByIdAndDelete(req.params.id);
   if (!trip) return res.status(404).json({ message: 'Trip not found' });
   res.json({ message: 'Trip deleted successfully' });
+
 };

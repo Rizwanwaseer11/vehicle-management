@@ -8,10 +8,11 @@ router.use(protect);
 router.use(authorizeRoles('admin'));
 
 router.post('/', createTrip);
+router.get('/available-drivers', findAvailableDrivers);
 router.get('/', getAllTrips);
 router.get('/:id', getTripById);
 router.put('/:id', updateTrip);
 router.delete('/:id', deleteTrip);
-router.get('/available-drivers',findAvailableDrivers);
+
 
 module.exports = router;
