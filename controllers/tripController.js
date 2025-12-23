@@ -39,13 +39,14 @@ exports.createTrip = async (req, res) => {
         });
       }
     }
-
+console.log(totalKm);
     // Total KM
     if (totalKm === undefined || totalKm === null || isNaN(Number(totalKm))) {
       return res.status(400).json({
         error: "Total kilometers are required and must be a number.",
       });
     }
+    console.log(totalKm ,'2nd');
 
     // Time validation
     if (!startTime || isNaN(Date.parse(startTime))) {
@@ -136,4 +137,4 @@ exports.deleteTrip = async (req, res) => {
   if (!trip) return res.status(404).json({ message: 'Trip not found' });
   res.json({ message: 'Trip deleted successfully' });
 
-};
+}

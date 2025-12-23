@@ -15,7 +15,7 @@ const tripSchema = new mongoose.Schema({
   isActive: { type: Boolean, default: true },
   startTime: { type: Date },
   endTime: { type: Date },
-  totalkm: { type: Number, default: 0 ,required: true}
+  totalKm: { type: Number, default: 0 ,required: true}
 }, { timestamps: true });
 
 module.exports = mongoose.model('Trip', tripSchema);
