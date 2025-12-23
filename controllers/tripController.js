@@ -39,14 +39,14 @@ exports.createTrip = async (req, res) => {
         });
       }
     }
-console.log(totalKm);
+// console.log(totalKm ,'1st');
     // Total KM
     if (totalKm === undefined || totalKm === null || isNaN(Number(totalKm))) {
       return res.status(400).json({
         error: "Total kilometers are required and must be a number.",
       });
     }
-    console.log(totalKm ,'2nd');
+    // console.log(totalKm ,'2nd');
 
     // Time validation
     if (!startTime || isNaN(Date.parse(startTime))) {
