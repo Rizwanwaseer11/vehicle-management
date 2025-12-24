@@ -5,7 +5,7 @@ const { authorizeRoles } = require('../middlewares/roleMiddleware');
 const { createTrip, getAllTrips, getTripById, updateTrip, deleteTrip,findAvailableDrivers } = require('../controllers/tripController');
 
 router.use(protect);
-router.use(authorizeRoles('admin' || 'employee'));
+router.use(authorizeRoles('admin', 'employee'))
 
 router.post('/', createTrip);
 router.get('/available-drivers', findAvailableDrivers);
