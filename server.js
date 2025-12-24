@@ -13,10 +13,10 @@ const rateLimit = require('express-rate-limit');
 const { Server } = require('socket.io');
 const Redis = require('ioredis');
 const { createAdapter } = require('@socket.io/redis-adapter');
-
 const routes = require('./routes');
 const socketHandler = require('./sockets/socketHandler');
 const logger = require('./utils/logger');
+const { authLimiter, adminLimiter, userLimiter } = require('./middlewares/rateLimiter');  
 
 const PORT = process.env.PORT || 5000;
 const MONGO_URI = process.env.MONGO_URI;
@@ -29,26 +29,39 @@ const REDIS_URL = process.env.REDIS_URL;
   const app = express();
   const server = http.createServer(app);
 
+  //trust proxy always first 
+  app.set('trust proxy', 1);
+
+// core middlewares
   app.use(cors());
   app.use(helmet());
   app.use(compression());
   app.use(express.json());
   app.use(express.urlencoded({ extended: true }));
-
   app.use(morgan('combined', { stream: logger.stream }));
-  app.use(rateLimit({ windowMs: 60*1000, max: 200 }));
 
+  // Health & root (NO rate limit)
 app.get('/', (req, res) => {
+  res.type('text').send('Welcome to the cab booking server!');
+})
+app.get('/health', (req, res) => res.json({ ok: true }));
+  // app.use('/api', routes);
 
-  // Set plain text response headers
-  res.setHeader('Content-Type', 'text/plain');
+  
+    // Scoped rate limiting (PROFESSIONAL)
 
-  // Send simple text message
-  res.send('Welcome to the cab booking server!');
-});
-  app.use('/api', routes);
+app.use('/api/auth', authLimiter);
+app.use('/api/admin', adminLimiter);
+app.use('/api/trips', adminLimiter);
 
-  app.get('/health', (req, res) => res.json({ ok: true }));
+app.use('/api/driver', userLimiter);
+app.use('/api/passenger', userLimiter);
+app.use('/api/messages', userLimiter);
+app.use('/api/notifications', userLimiter);
+
+//  Routes entry point (rate limited)
+ 
+app.use('/api', routes);
 
   app.use((err, req, res, next) => {
     logger.error(err);
