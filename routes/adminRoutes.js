@@ -5,7 +5,7 @@ const { authorizeRoles } = require('../middlewares/roleMiddleware');
 const { getAllUsers, getUserById, updateUser, deleteUser } = require('../controllers/userController');
 
 router.use(protect);
-router.use(authorizeRoles('admin , employee'));
+router.use(authorizeRoles('admin '|| 'employee'));
 
 router.get('/', getAllUsers);
 router.get('/:id', getUserById);
