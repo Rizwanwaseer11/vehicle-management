@@ -10,6 +10,7 @@ const stopSchema = new mongoose.Schema({
 
 const tripSchema = new mongoose.Schema({
   driver: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+   bus: { type: mongoose.Schema.Types.ObjectId, ref: 'Bus', required: true },
   routeName: { type: String, required: true },
   stops: [stopSchema],
   isActive: { type: Boolean, default: true },
