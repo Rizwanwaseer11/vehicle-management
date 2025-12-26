@@ -28,11 +28,11 @@ exports.createBus = async (req, res) => {
       return res.status(400).json({ message: 'Bus with this number already exists' });
     }
 
-    // Check if this bus is assigned to any active trip
-    const assignedTrip = await Trip.findOne({ bus: existingBus?._id, isActive: true });
-    if (assignedTrip) {
-      return res.status(400).json({ message: 'This bus is already assigned to an active trip' });
-    }
+    // No need to check active trips for a new bus
+    // const assignedTrip = await Trip.findOne({ bus: existingBus?._id, isActive: true });
+    // if (assignedTrip) {
+    //   return res.status(400).json({ message: 'This bus is already assigned to an active trip' });
+    // }
 
     // Create bus
     const bus = await Bus.create({ number: number.trim(), model: model.trim(), seatingCapacity });
@@ -43,6 +43,7 @@ exports.createBus = async (req, res) => {
     res.status(500).json({ message: 'Server error' });
   }
 };
+
 
 //gell All Buses
 exports.getAllBuses = async (req, res) => {
