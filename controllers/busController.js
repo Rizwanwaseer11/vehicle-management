@@ -2,12 +2,12 @@ const express = require('express');
 const router = express.Router();
 const Bus = require('../models/Bus');
 const Trip = require('../models/Trip');
-const { protect, authorizeRoles } = require('../middlewares/auth');
+
 
 // =====================
 // CREATE BUS
 // =====================
-router.post('/', protect, authorizeRoles('admin'), async (req, res) => {
+exports.createBus = async (req, res) => {
   try {
     const { number, model, seatingCapacity } = req.body;
 
@@ -42,12 +42,63 @@ router.post('/', protect, authorizeRoles('admin'), async (req, res) => {
     console.error(err);
     res.status(500).json({ message: 'Server error' });
   }
-});
+};
 
+//gell All Buses
+exports.getAllBuses = async (req, res) => {
+  try {
+    // Fetch all buses from DB
+    const buses = await Bus.find().select("_id number model seatingCapacity isActive createdAt");
+
+    res.status(200).json({
+      success: true,
+      count: buses.length,
+      buses,
+      message: buses.length
+        ? "All buses fetched successfully"
+        : "No buses found in the system",
+    });
+  } catch (error) {
+    console.error("Get all buses error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch buses",
+    });
+  }
+};
+
+//get available buses
+exports.getAvailableBuses = async (req, res) => {
+  try {
+    // 1️⃣ Find all active trips and get assigned bus IDs
+    const activeTripBuses = await Trip.find({ isActive: true }).distinct("bus");
+
+    // 2️⃣ Find buses NOT assigned to active trips
+    const availableBuses = await Bus.find({
+      isActive: true,          // Bus should be active (not under maintenance)
+      _id: { $nin: activeTripBuses }, // Exclude buses already in active trips
+    }).select("_id number model seatingCapacity");
+
+    res.status(200).json({
+      success: true,
+      count: availableBuses.length,
+      buses: availableBuses,
+      message: availableBuses.length
+        ? "Available buses fetched successfully"
+        : "No available buses at the moment",
+    });
+  } catch (error) {
+    console.error("Available buses error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch available buses",
+    });
+  }
+}
 // =====================
 // EDIT BUS
 // =====================
-router.put('/:id', protect, authorizeRoles('admin'), async (req, res) => {
+exports.editBus =  async (req, res) => {
   try {
     const bus = await Bus.findById(req.params.id);
     if (!bus) return res.status(404).json({ message: 'Bus not found' });
@@ -65,12 +116,12 @@ router.put('/:id', protect, authorizeRoles('admin'), async (req, res) => {
     console.error(err);
     res.status(500).json({ message: 'Server error' });
   }
-});
+};
 
 // =====================
 // DELETE BUS
 // =====================
-router.delete('/:id', protect, authorizeRoles('admin'), async (req, res) => {
+exports.deleteBus = async (req, res) => {
   try {
     const bus = await Bus.findById(req.params.id);
     if (!bus) return res.status(404).json({ message: 'Bus not found' });
@@ -90,6 +141,6 @@ router.delete('/:id', protect, authorizeRoles('admin'), async (req, res) => {
     console.error(err);
     res.status(500).json({ message: 'Server error' });
   }
-});
+};
 
-module.exports = router;
+

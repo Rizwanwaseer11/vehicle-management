@@ -53,6 +53,7 @@ app.get('/health', (req, res) => res.json({ ok: true }));
 app.use('/api/auth', authLimiter);
 app.use('/api/admin', adminLimiter);
 app.use('/api/trips', adminLimiter);
+app.use('/api/buses', adminLimiter);
 
 app.use('/api/driver', userLimiter);
 app.use('/api/passenger', userLimiter);
