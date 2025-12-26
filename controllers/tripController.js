@@ -91,9 +91,29 @@ exports.createTrip = async (req, res) => {
 
 
 exports.getAllTrips = async (req, res) => {
-  const trips = await Trip.find().populate('driver stops.passengers', 'name email profilePic');
-  res.json(trips);
+  try {
+    const trips = await Trip.find()
+      .populate("driver", "name email profilePic")
+      .populate("stops.passengers", "name email profilePic")
+      .populate("bus", "number model seatingCapacity isActive");
+
+    res.status(200).json({
+      success: true,
+      count: trips.length,
+      trips,
+      message: trips.length
+        ? "Trips fetched successfully"
+        : "No trips found",
+    });
+  } catch (error) {
+    console.error("Get trips error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch trips",
+    });
+  }
 };
+
 
 // ----------------- FIND AVAILABLE DRIVERS -----------------
 exports.findAvailableDrivers = async (req, res) => {
