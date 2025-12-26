@@ -33,7 +33,11 @@ const REDIS_URL = process.env.REDIS_URL;
   app.set('trust proxy', 1);
 
 // core middlewares
-  app.use(cors());
+  app.use(cors({
+  origin: ["http://localhost:5173", "https://your-vercel-frontend.vercel.app"], // allowed origins
+  credentials: true, // allow cookies
+}));
+
   app.use(helmet());
   app.use(compression());
   app.use(express.json());
