@@ -48,16 +48,10 @@ exports.createBus = async (req, res) => {
 exports.getAllBuses = async (req, res) => {
   try {
     // Fetch all buses from DB
-    const buses = await Bus.find().select("_id number model seatingCapacity isActive createdAt");
+    const buses = await Bus.find().select("_id number model seatingCapacity isActive");
 
-    res.status(200).json({
-      success: true,
-      count: buses.length,
-      buses,
-      message: buses.length
-        ? "All buses fetched successfully"
-        : "No buses found in the system",
-    });
+    // Send directly as an array
+    res.status(200).json(buses);
   } catch (error) {
     console.error("Get all buses error:", error);
     res.status(500).json({
