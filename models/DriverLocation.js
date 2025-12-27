@@ -5,7 +5,9 @@ const driverLocationSchema = new mongoose.Schema({
   trip: { type: mongoose.Schema.Types.ObjectId, ref: 'Trip', required: true },
   latitude: { type: Number, required: true },
   longitude: { type: Number, required: true },
-  updatedAt: { type: Date, default: Date.now }
+  updatedAt: { type: Date, default: Date.now },
+  // speed
+  
 });
 
 driverLocationSchema.index({ driver: 1, trip: 1 }, { unique: true });
