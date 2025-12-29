@@ -99,19 +99,26 @@ app.get('/health', (req, res) => res.json({ ok: true }));
   
     // Scoped rate limiting (PROFESSIONAL)
 
+// AUTH
 app.use('/api/auth', allowOptions(authLimiter));
+
+// ADMIN HEAVY ROUTES
 app.use('/api/admin', allowOptions(adminLimiter));
-app.use('/api/trips', allowOptions(adminLimiter));
 app.use('/api/buses', allowOptions(adminLimiter));
 
+// TRIPS (SPLIT BY TRAFFIC TYPE)
+app.use('/api/trips', allowOptions(adminLimiter));
+
+// USER / DRIVER / PASSENGER
 app.use('/api/driver', allowOptions(userLimiter));
 app.use('/api/passenger', allowOptions(userLimiter));
 app.use('/api/messages', allowOptions(userLimiter));
 app.use('/api/notifications', allowOptions(userLimiter));
 
-//  Routes entry point (rate limited)
- 
+// ROUTES ENTRY
 app.use('/api', routes);
+
+
 
   app.use((err, req, res, next) => {
     logger.error(err);
