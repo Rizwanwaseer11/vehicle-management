@@ -33,17 +33,40 @@ const REDIS_URL = process.env.REDIS_URL;
   app.set('trust proxy', 1);
 
 // core middlewares
- app.use(
-  cors({
-    origin: [
-      "https://vehicle-management-front-end.vercel.app",
-      "http://localhost:5173"
-    ],
-    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"],
-    credentials: true
-  })
-);
+const allowedOrigins = [
+  "https://vehicle-management-front-end.vercel.app",
+  "http://localhost:5173"
+];
+
+app.use(cors({
+  origin: function (origin, callback) {
+    // allow server-to-server & Postman
+    if (!origin) return callback(null, true);
+
+    if (allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error("CORS not allowed"));
+    }
+  },
+  credentials: true,
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"]
+}));
+
+app.options("*", cors());
+ 
+// app.use(
+//   cors({
+//     origin: [
+//       "https://vehicle-management-front-end.vercel.app",
+//       "http://localhost:5173"
+//     ],
+//     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+//     allowedHeaders: ["Content-Type", "Authorization"],
+//     credentials: true
+//   })
+// );
 
   app.use(helmet());
   app.use(compression());
