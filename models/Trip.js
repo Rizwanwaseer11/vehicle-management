@@ -12,7 +12,7 @@ const stopSchema = new mongoose.Schema({
    name: { type: String, required: true },
   latitude: { type: Number, required: true },
   longitude: { type: Number, required: true },
-  order: {tyep : Number, required : true},
+  order: {type : Number, required : true},
 
   passengers: [{
     user: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
