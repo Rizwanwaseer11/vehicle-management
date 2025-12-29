@@ -102,55 +102,69 @@ const helmet = require('helmet');
 const compression = require('compression');
 const morgan = require('morgan');
 const rateLimit = require('express-rate-limit');
-const { Server } = require('socket.io');
-const Redis = require('ioredis');
-const { createAdapter } = require('@socket.io/redis-adapter');
 const routes = require('./routes');
-const socketHandler = require('./sockets/socketHandler');
 const logger = require('./utils/logger');
+const serverless = require('serverless-http');
+const { Server } = require('socket.io');
+// const Redis = require('ioredis');
+// const { createAdapter } = require('@socket.io/redis-adapter');
+// const socketHandler = require('./sockets/socketHandler');
 
 const PORT = process.env.PORT || 5000;
 const MONGO_URI = process.env.MONGO_URI;
 const REDIS_URL = process.env.REDIS_URL;
 
-// ----- Global Rate Limiter (All API requests) -----
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: 'Too many requests from this IP, please try again later.'
-});
-
-// ----- Allow OPTIONS to bypass rate limiter -----
-const allowOptions = (limiter) => (req, res, next) => {
-  if (req.method === 'OPTIONS') return res.sendStatus(204);
-  return limiter(req, res, next);
-};
-
 // ----- Express App -----
 const app = express();
-app.set('trust proxy', 1); // For real IPs behind proxies
+app.set('trust proxy', 1); // for correct IPs behind proxies
 
-// Core middlewares
-app.use(cors());          // Global CORS, handles preflight
+// ----- CORS -----
+const allowedOrigins = [
+  'https://vehicle-management-front-end.vercel.app',
+  'http://localhost:5173',
+];
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  if (allowedOrigins.includes(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+  }
+  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type,Authorization');
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
+
+  if (req.method === 'OPTIONS') return res.sendStatus(204);
+  next();
+});
+
+// ----- Core Middlewares -----
 app.use(helmet());
 app.use(compression());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(morgan('combined', { stream: logger.stream }));
 
-// Landing & health routes (NO rate limit)
+// ----- Landing Page & Health Check (No rate limit) -----
 app.get('/', (req, res) => res.type('text').send('Welcome to the cab booking server!'));
 app.get('/health', (req, res) => res.json({ ok: true }));
 
-// Apply global rate limiter ONLY to /api
+// ----- Global Rate Limiter (All /api requests) -----
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: 'Too many requests from this IP, please try again later.',
+});
+const allowOptions = (limiter) => (req, res, next) => {
+  if (req.method === 'OPTIONS') return res.sendStatus(204);
+  return limiter(req, res, next);
+};
 app.use('/api', allowOptions(limiter));
 
-// API routes
+// ----- API Routes -----
 app.use('/api', routes);
 
-// Global error handler
+// ----- Global Error Handler -----
 app.use((err, req, res, next) => {
   logger.error(err);
   res.status(500).json({ error: err.message || 'Internal Server Error' });
@@ -169,12 +183,13 @@ const io = new Server(server, { cors: { origin: '*' } });
 
 // socketHandler(io);
 
-// ----- MongoDB Connect & Start Server -----
+// ----- MongoDB Connect & Local Server Start -----
 (async () => {
   try {
     await mongoose.connect(MONGO_URI);
     logger.info('MongoDB connected');
 
+    // Only listen locally, serverless will handle in Vercel
     if (process.env.NODE_ENV !== 'production') {
       server.listen(PORT, () => {
         logger.info(`Worker PID ${process.pid} listening on ${PORT}`);
@@ -185,6 +200,5 @@ const io = new Server(server, { cors: { origin: '*' } });
   }
 })();
 
-// ----- Export app for Vercel serverless -----
-const serverless = require('serverless-http');
+// ----- Export for Vercel -----
 module.exports.handler = serverless(app);
