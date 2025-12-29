@@ -44,27 +44,32 @@ const allowOptions = (limiter) => {
 
 // core middlewares
 const allowedOrigins = [
-  "https://vehicle-management-front-end.vercel.app",
-  "http://localhost:5173"
+  'https://vehicle-management-front-end.vercel.app',
+  'http://localhost:5173'
 ];
 
-app.use(cors({
-  origin: function (origin, callback) {
-    // allow server-to-server & Postman
-    if (!origin) return callback(null, true);
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      // Allow Postman / server-to-server
+      if (!origin) return callback(null, true);
 
-    if (allowedOrigins.includes(origin)) {
-      callback(null, true);
-    } else {
-      callback(new Error("CORS not allowed"));
-    }
-  },
-  credentials: true,
-  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization"]
-}));
+      if (allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
 
-app.options("*", cors());
+      // ❌ DO NOT throw error
+      return callback(null, false);
+    },
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+  })
+);
+
+// MUST be before routes
+app.options('*', cors());
+
  
 // app.use(
 //   cors({
