@@ -22,6 +22,16 @@ const PORT = process.env.PORT || 5000;
 const MONGO_URI = process.env.MONGO_URI;
 const REDIS_URL = process.env.REDIS_URL;
 
+// allow options to bypass rate limitor
+const allowOptions = (limiter) => {
+  return (req, res, next) => {
+    if (req.method === 'OPTIONS') {
+      return res.sendStatus(204);
+    }
+    return limiter(req, res, next);
+  };
+};
+
 (async () => {
   await mongoose.connect(MONGO_URI);
   logger.info('MongoDB connected');
@@ -84,15 +94,15 @@ app.get('/health', (req, res) => res.json({ ok: true }));
   
     // Scoped rate limiting (PROFESSIONAL)
 
-app.use('/api/auth', authLimiter);
-app.use('/api/admin', adminLimiter);
-app.use('/api/trips', adminLimiter);
-app.use('/api/buses', adminLimiter);
+app.use('/api/auth', allowOptions(authLimiter));
+app.use('/api/admin', allowOptions(adminLimiter));
+app.use('/api/trips', allowOptions(adminLimiter));
+app.use('/api/buses', allowOptions(adminLimiter));
 
-app.use('/api/driver', userLimiter);
-app.use('/api/passenger', userLimiter);
-app.use('/api/messages', userLimiter);
-app.use('/api/notifications', userLimiter);
+app.use('/api/driver', allowOptions(userLimiter));
+app.use('/api/passenger', allowOptions(userLimiter));
+app.use('/api/messages', allowOptions(userLimiter));
+app.use('/api/notifications', allowOptions(userLimiter));
 
 //  Routes entry point (rate limited)
  
