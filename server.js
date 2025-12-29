@@ -105,10 +105,6 @@ const routes = require('./routes');
 const logger = require('./utils/logger');
 const serverless = require('serverless-http');
 
-const PORT = process.env.PORT || 5000;
-const MONGO_URI = process.env.MONGO_URI;
-
-// ----- Express App -----
 const app = express();
 app.set('trust proxy', 1);
 
@@ -119,9 +115,7 @@ const allowedOrigins = [
 ];
 app.use((req, res, next) => {
   const origin = req.headers.origin;
-  if (allowedOrigins.includes(origin)) {
-    res.setHeader('Access-Control-Allow-Origin', origin);
-  }
+  if (allowedOrigins.includes(origin)) res.setHeader('Access-Control-Allow-Origin', origin);
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type,Authorization');
   res.setHeader('Access-Control-Allow-Credentials', 'true');
@@ -137,17 +131,17 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(morgan('combined', { stream: logger.stream }));
 
-// ----- Landing & Health -----
+// ----- Landing & Health (No rate limit) -----
 app.get('/', (req, res) => res.type('text').send('Welcome to the cab booking server!'));
 app.get('/health', (req, res) => res.json({ ok: true }));
 
-// ----- Global Rate Limiter -----
+// ----- Global Rate Limiter for /api -----
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 100,
   standardHeaders: true,
   legacyHeaders: false,
-  message: 'Too many requests from this IP, please try again later.',
+  message: 'Too many requests from this IP, try later.',
 });
 app.use('/api', limiter);
 
@@ -160,24 +154,22 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: err.message || 'Internal Server Error' });
 });
 
-// ----- MongoDB Connection -----
-mongoose.connect(MONGO_URI)
-  .then(() => logger.info('MongoDB connected'))
-  .catch(err => logger.error('MongoDB connection error:', err));
+// ----- MongoDB Connection Wrapper for Serverless -----
+const connectDB = async () => {
+  if (mongoose.connection.readyState === 0) {
+    try {
+      await mongoose.connect(process.env.MONGO_URI);
+      logger.info('MongoDB connected');
+    } catch (err) {
+      logger.error('MongoDB connection error:', err);
+      throw err;
+    }
+  }
+};
 
-// ----- Local Server Start (only when NOT serverless) -----
-if (process.env.NODE_ENV !== 'production') {
-  const http = require('http');
-  const { Server } = require('socket.io');
-  const server = http.createServer(app);
-  const io = new Server(server, { cors: { origin: '*' } });
+// ----- Export for Vercel -----
+module.exports.handler = serverless(async (req, res) => {
+  await connectDB();
+  return app(req, res);
+});
 
-  // Socket.io handler here if needed
-  // const socketHandler = require('./sockets/socketHandler');
-  // socketHandler(io);
-
-  server.listen(PORT, () => logger.info(`Server listening on port ${PORT}`));
-}
-
-// ----- Export for Vercel Serverless -----
-module.exports.handler = serverless(app);
