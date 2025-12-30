@@ -11,6 +11,10 @@ exports.createTrip = async (req, res) => {
       return res.status(400).json({ error: "Driver is required." });
     }
 
+    if (!bus || typeof bus !== 'string'){
+      return res.status(400).json({error: 'Bus is required'})
+    }
+
     if (!routeName || typeof routeName !== 'string') {
       return res.status(400).json({ error: "Route name is required." });
     }
