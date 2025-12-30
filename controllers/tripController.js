@@ -4,7 +4,7 @@ const User = require('../models/User');
 // ---------------- CREATE TRIP ----------------
 exports.createTrip = async (req, res) => {
   try {
-    const { driver, routeName, stops, totalKm, startTime, endTime, bus, routePolyline } = req.body;
+    const { driver, bus, routeName, stops, totalKm, startTime, endTime, routePolyline } = req.body;
 
     // --------- Validations ---------
     if (!driver || typeof driver !== 'string') {
