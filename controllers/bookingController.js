@@ -13,8 +13,7 @@ exports.getActiveTrips = async (req, res) => {
       isActive: true 
     })
     .populate('driver', 'name email')
-    // ✅ FIX: Fetch 'model' so we can show "Toyota Coaster" in the list
-    .populate('bus', 'number seatingCapacity model'); 
+    .populate('bus', 'number seatingCapacity model'); // ✅ Gets Model for list
 
     res.status(200).json({ success: true, count: trips.length, data: trips });
   } catch (error) {
@@ -63,9 +62,9 @@ exports.createBooking = async (req, res) => {
       passenger: passengerId,
       trip: trip._id,
       
-      // ✅ SNAPSHOT BUS DETAILS
+      // ✅ SNAPSHOT BUS DETAILS (Saved permanently)
       busNumber: trip.bus ? trip.bus.number : "Unknown Bus",
-      busModel: trip.bus ? trip.bus.model : "Standard Bus", // <--- NEW FIELD
+      busModel: trip.bus ? trip.bus.model : "Standard Bus", 
       driverName: trip.driver ? trip.driver.name : "Unknown Driver",
       groupName: trip.routeName,
       
@@ -82,7 +81,7 @@ exports.createBooking = async (req, res) => {
     await newBooking.save({ session });
     await session.commitTransaction();
 
-    // E. Notify Driver
+    // E. Notify Driver (Real-time)
     try {
       const io = getIO();
       io.to(`trip_${trip._id}`).emit('new_passenger', {
@@ -120,7 +119,6 @@ exports.cancelBooking = async (req, res) => {
     booking.status = 'CANCELLED';
     await booking.save();
 
-    // Notify Driver
     try {
       const io = getIO();
       io.to(`trip_${booking.trip}`).emit('passenger_cancelled', { bookingId: booking._id });
@@ -133,7 +131,7 @@ exports.cancelBooking = async (req, res) => {
 };
 
 // ==========================================
-// 4. CHECK ACTIVE BOOKING
+// 4. CHECK ACTIVE BOOKING (The Critical One)
 // ==========================================
 exports.getMyCurrentBooking = async (req, res) => {
   try {
@@ -143,10 +141,11 @@ exports.getMyCurrentBooking = async (req, res) => {
     })
     .populate({
       path: 'trip',
-      select: 'polyline stops routeName driver bus', 
+      // ✅ ADD 'startTime' HERE 👇
+      select: 'polyline stops routeName driver bus startTime', 
       populate: { 
         path: 'driver bus',
-        select: 'name number model' // ✅ Fetch model for the map screen
+        select: 'name number model' 
       }
     });
 
@@ -165,7 +164,7 @@ exports.getMyBookings = async (req, res) => {
     const bookings = await Booking.find({ passenger: req.user._id })
       .populate({
         path: 'trip',
-        select: 'routeName date',
+        select: 'routeName date startTime', // Added startTime here too just in case
         populate: { path: 'driver', select: 'name' }
       })
       .sort({ createdAt: -1 });
