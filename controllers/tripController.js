@@ -1,7 +1,7 @@
 const Trip = require('../models/Trip');
 const User = require('../models/User');
 const Bus = require('../models/Bus'); // Ensure you have this import
-const Booking = rquire('../models/Booking')
+const Booking = require('../models/Booking')
 
 // ==========================================
 // 1. CREATE TRIP (ADMIN)
