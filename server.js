@@ -118,6 +118,7 @@ const rateLimit = require('express-rate-limit');
 const { Server } = require('socket.io');
 const routes = require('./routes');
 const logger = require('./utils/logger');
+const initScheduler = require('./utils/scheduler');
 
 const PORT = process.env.PORT || 5000;
 const MONGO_URI = process.env.MONGO_URI;
@@ -197,6 +198,10 @@ const allowedOrigins = [
   // socketHandler(io);
 
   // ----- Start Server -----
+
+  initScheduler()   // Start the Scheduler when server starts
+
+  
   server.listen(PORT, () => logger.info(`Worker PID ${process.pid} listening on ${PORT}`));
 })();
 

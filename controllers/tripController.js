@@ -1,59 +1,65 @@
 const Trip = require('../models/Trip');
 const User = require('../models/User');
-const Bus = require('../models/Bus'); // Ensure you have this import
-const Booking = require('../models/Booking')
+const Bus = require('../models/Bus');
+const Booking = require('../models/Booking');
 
 // ==========================================
-// 1. CREATE TRIP (ADMIN)
+// 1. CREATE TRIP (STRICT VALIDATION)
 // ==========================================
 exports.createTrip = async (req, res) => {
   try {
-    // 1. Extract Data from Frontend
     const { 
-        driver, 
-        bus, 
-        routeName, 
-        stops, 
-        totalKm, 
-        startTime, 
-        routePolyline // <--- Frontend MUST send this string
+        driver, bus, routeName, stops, totalKm, startTime, routePolyline, recurrence 
     } = req.body;
 
-    // 2. Strict Validations
-    if (!driver || !bus || !routeName || !startTime) {
-      return res.status(400).json({ error: "Missing required fields (Driver, Bus, Name, Time)." });
-    }
-
-    // ✅ VALIDATION: Ensure Map Data Exists
-    if (!routePolyline || typeof routePolyline !== 'string') {
-        return res.status(400).json({ 
-            error: "Route Polyline is missing! The map cannot be drawn without it." 
-        });
-    }
-
-    if (!Array.isArray(stops) || stops.length < 2) {
-      return res.status(400).json({ error: "A trip must have at least 2 stops." });
-    }
-
-    // 3. RESOURCE CHECK: Are they already busy?
-    // We check if this Driver or Bus is currently on an ACTIVE trip.
-    const conflict = await Trip.findOne({
-      $or: [{ driver: driver }, { bus: bus }],
-      status: 'ONGOING' // Only blocks if they are currently driving
-    });
-
-    if (conflict) {
-      return res.status(409).json({ 
-        error: "Driver or Bus is currently assigned to an ONGOING trip." 
+    // --- 🚨 STEP 1: TOP-LEVEL VALIDATIONS ---
+    const missingFields = [];
+    if (!driver) missingFields.push("Driver");
+    if (!bus) missingFields.push("Bus");
+    if (!routeName) missingFields.push("Route Name");
+    if (!startTime) missingFields.push("Start Time");
+    if (totalKm === undefined || totalKm === null || totalKm === "") missingFields.push("Total KM");
+    if (!routePolyline) missingFields.push("Route Map (Polyline)");
+    
+    if (missingFields.length > 0) {
+      return res.status(400).json({ 
+        error: `Missing required fields: ${missingFields.join(", ")}` 
       });
     }
 
-    // 4. SAVE TRIP TO DATABASE
+    // --- 🚨 STEP 2: STOPS VALIDATION ---
+    if (!Array.isArray(stops) || stops.length < 2) {
+      return res.status(400).json({ error: "A trip must have at least 2 stops (Start & End)." });
+    }
+
+    // Validate EACH stop
+    for (let i = 0; i < stops.length; i++) {
+        const s = stops[i];
+        if (!s.name) return res.status(400).json({ error: `Stop #${i+1} is missing a Name.` });
+        if (s.latitude === undefined || s.latitude === null) return res.status(400).json({ error: `Stop '${s.name}' is missing Latitude.` });
+        if (s.longitude === undefined || s.longitude === null) return res.status(400).json({ error: `Stop '${s.name}' is missing Longitude.` });
+        if (s.order === undefined || s.order === null) return res.status(400).json({ error: `Stop '${s.name}' is missing Order.` });
+    }
+
+    // --- 🚨 STEP 3: CONFLICT CHECK (Resources) ---
+    // If this is a REAL trip (not a template), check if driver/bus are busy
+    const isTemplate = recurrence && recurrence !== 'NONE';
+    
+    if (!isTemplate) {
+        const conflict = await Trip.findOne({
+            $or: [{ driver: driver }, { bus: bus }],
+            status: 'ONGOING' 
+        });
+        if (conflict) {
+            return res.status(409).json({ error: "Driver or Bus is currently assigned to an ONGOING trip." });
+        }
+    }
+
+    // --- STEP 4: SAVE ---
     const trip = await Trip.create({
       driver,
       bus,
       routeName,
-      // Map stops to clean schema
       stops: stops.map(s => ({
         name: s.name,
         latitude: Number(s.latitude),
@@ -62,18 +68,21 @@ exports.createTrip = async (req, res) => {
       })),
       totalKm: Number(totalKm),
       startTime: new Date(startTime),
-      polyline: routePolyline, // ✅ Saved exactly as Frontend sent it
+      polyline: routePolyline,
+      recurrence: recurrence || 'NONE',
+      isTemplate: isTemplate,
+      isActive: true,
       status: 'SCHEDULED'
     });
 
     return res.status(201).json({
       success: true,
-      trip,
-      message: "Trip created successfully."
+      message: isTemplate ? "Schedule Template Created" : "Trip Created Successfully",
+      trip
     });
 
   } catch (error) {
-    console.error("Error creating trip:", error);
+    console.error("Create Trip Error:", error);
     return res.status(500).json({ error: error.message });
   }
 };
@@ -84,68 +93,67 @@ exports.createTrip = async (req, res) => {
 exports.getAllTrips = async (req, res) => {
   try {
     const trips = await Trip.find()
-      .populate("driver", "name email profilePic")
-      .populate("bus", "number model seatingCapacity isActive")
-      .sort({ startTime: 1 }); // Sort by earliest time first
+      .populate("driver", "name email")
+      .populate("bus", "number model")
+      .sort({ createdAt: -1 });
 
-    res.status(200).json({
-      success: true,
-      count: trips.length,
-      trips
-    });
+    res.status(200).json({ success: true, trips });
   } catch (error) {
-    console.error("Get trips error:", error);
-    res.status(500).json({ success: false, message: "Failed to fetch trips" });
+    res.status(500).json({ success: false, message: error.message });
   }
 };
 
 // ==========================================
-// 3. GET TRIP BY ID (For Tracking & Editing)
+// 3. GET TRIP BY ID
 // ==========================================
 exports.getTripById = async (req, res) => {
   try {
     const trip = await Trip.findById(req.params.id)
-      // ✅ 1. Get Full Driver Details
+      // ✅ 1. Populate Driver (Get Name & ID)
       .populate("driver", "name email phone profilePic") 
       
-      // ✅ 2. Get Full Bus Details (Number, Model, Capacity)
+      // ✅ 2. Populate Bus (Get Number & Model)
       .populate("bus", "number model seatingCapacity isActive")
       
-      // ✅ 3. Lean() speeds up the query for tracking
+      // ✅ 3. Lean() for performance (Returns plain JS object)
       .lean(); 
 
     if (!trip) {
       return res.status(404).json({ success: false, message: "Trip not found" });
     }
 
-    // ✅ 4. Send the complete object
+    // ✅ 4. Send ALL fields required for Edit Form & Map
     res.status(200).json({ 
       success: true, 
       trip: {
         _id: trip._id,
+        
+        // Basic Info
         routeName: trip.routeName,
-        
-        // Map Data
-        polyline: trip.polyline,   // Critical for Map Line
         totalKm: trip.totalKm,
-        
-        // Schedule
-        startTime: trip.startTime, // ISO Date format
         status: trip.status,
         isActive: trip.isActive,
+        
+        // ✅ MAP DATA (Critical for Map Tracking/Editing)
+        polyline: trip.polyline,   
+
+        // ✅ SCHEDULING (Critical for Edit Form)
+        startTime: trip.startTime, // 24h Date Object
+        recurrence: trip.recurrence || 'NONE', // 'DAILY', 'WEEKDAYS', etc.
+        isTemplate: trip.isTemplate,
 
         // Resources
-        driver: trip.driver,       // Contains name, email, phone
-        bus: trip.bus,             // Contains number, model
+        driver: trip.driver, 
+        bus: trip.bus,       
 
-        // Stops (Sorted by order just to be safe)
-        stops: trip.stops.sort((a, b) => a.order - b.order).map(stop => ({
+        // Stops (Sorted by order)
+        stops: trip.stops ? trip.stops.sort((a, b) => a.order - b.order).map(stop => ({
           _id: stop._id,
           name: stop.name,
           latitude: stop.latitude,
           longitude: stop.longitude,
           order: stop.order
-        }))
+        })) : []
       }
     });
 
@@ -156,84 +164,70 @@ exports.getTripById = async (req, res) => {
 };
 
 // ==========================================
-// 4. UPDATE TRIP (Admin Edit)
+// 4. UPDATE TRIP (STRICT VALIDATION)
 // ==========================================
 exports.updateTrip = async (req, res) => {
   try {
     const { id } = req.params;
     const { 
-      driver, 
-      bus, 
-      routeName, 
-      stops, 
-      totalKm, 
-      startTime, 
-      routePolyline,
-      status 
+        driver, bus, routeName, stops, totalKm, startTime, routePolyline, recurrence, status 
     } = req.body;
 
-    // 1. Check if Trip Exists
-    const tripToUpdate = await Trip.findById(id);
-    if (!tripToUpdate) {
-      return res.status(404).json({ success: false, message: "Trip not found" });
+    // --- 🚨 STEP 1: VALIDATIONS (Same as Create) ---
+    const missingFields = [];
+    if (!driver) missingFields.push("Driver");
+    if (!bus) missingFields.push("Bus");
+    if (!routeName) missingFields.push("Route Name");
+    if (!startTime) missingFields.push("Start Time");
+    if (!routePolyline) missingFields.push("Route Map (Polyline)");
+    
+    if (missingFields.length > 0) {
+      return res.status(400).json({ error: `Missing required fields: ${missingFields.join(", ")}` });
     }
 
-    // 2. RESOURCE CONFLICT CHECK (Smart Logic)
-    // We check if the Driver or Bus is busy in *another* ONGOING trip.
-    // We use ($ne: id) to exclude THIS trip from the check.
-    if (status === 'ONGOING' || tripToUpdate.status === 'ONGOING') {
+    if (!Array.isArray(stops) || stops.length < 2) {
+        return res.status(400).json({ error: "A trip must have at least 2 stops." });
+    }
+
+    // --- 🚨 STEP 2: CONFLICT CHECK ---
+    // If trip is ONGOING, ensure resources aren't double-booked (excluding self)
+    if (status === 'ONGOING') {
        const conflict = await Trip.findOne({
-         _id: { $ne: id }, // <--- Critical: Ignore current trip
+         _id: { $ne: id }, 
          $or: [{ driver: driver }, { bus: bus }],
          status: 'ONGOING'
        });
-
        if (conflict) {
-         return res.status(409).json({ 
-           success: false, 
-           error: "Conflict: Driver or Bus is already assigned to another ONGOING trip." 
-         });
+         return res.status(409).json({ error: "Driver or Bus is busy in another ONGOING trip." });
        }
     }
 
-    // 3. Prepare Update Object
-    const updateData = {
-      driver,
-      bus,
-      routeName,
-      totalKm: Number(totalKm),
-      startTime: new Date(startTime),
-      polyline: routePolyline, // Update map line if edited
-      status
-    };
+    // --- STEP 3: PREPARE UPDATE ---
+    const isTemplate = recurrence && recurrence !== 'NONE';
 
-    // 4. Handle Stops Update (Map cleanly)
-    if (stops && Array.isArray(stops)) {
-      if (stops.length < 2) {
-        return res.status(400).json({ error: "Trip must have at least 2 stops." });
-      }
-      updateData.stops = stops.map(s => ({
+    const updateData = {
+      driver, 
+      bus, 
+      routeName, 
+      totalKm: Number(totalKm), 
+      startTime: new Date(startTime),
+      polyline: routePolyline,
+      recurrence: recurrence || 'NONE',
+      isTemplate: isTemplate,
+      status: status, // Allow status updates (e.g. Admin fixing a mistake)
+      stops: stops.map(s => ({
         name: s.name,
         latitude: Number(s.latitude),
         longitude: Number(s.longitude),
         order: Number(s.order)
-      }));
-    }
+      }))
+    };
 
-    // 5. PERFORM UPDATE
-    const updatedTrip = await Trip.findByIdAndUpdate(
-      id, 
-      updateData, 
-      { new: true, runValidators: true } // Return new doc & validate enum
-    )
-    .populate("driver", "name email phone profilePic")
-    .populate("bus", "number model seatingCapacity");
+    const updatedTrip = await Trip.findByIdAndUpdate(id, updateData, { new: true });
 
-    res.status(200).json({ 
-      success: true, 
-      message: "Trip updated successfully.", 
-      trip: updatedTrip 
-    });
+    if (!updatedTrip) return res.status(404).json({ message: "Trip not found" });
+
+    res.status(200).json({ success: true, message: "Trip updated successfully", trip: updatedTrip });
 
   } catch (error) {
     console.error("Update Trip Error:", error);
@@ -241,54 +235,48 @@ exports.updateTrip = async (req, res) => {
   }
 };
 
+// ==========================================
+// 5. TOGGLE ACTIVE STATUS
+// ==========================================
+exports.toggleTripStatus = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { isActive } = req.body; 
 
+        const trip = await Trip.findByIdAndUpdate(id, { isActive }, { new: true });
+        
+        if (!trip) return res.status(404).json({ message: "Trip not found" });
+
+        res.status(200).json({ success: true, message: "Status updated", trip });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+};
 
 // ==========================================
-// 5. DELETE TRIP (Safe Delete)
+// 6. DELETE TRIP
 // ==========================================
 exports.deleteTrip = async (req, res) => {
   try {
-    const { id } = req.params;
+    const trip = await Trip.findById(req.params.id);
+    if (!trip) return res.status(404).json({ message: "Trip not found" });
 
-    // 1. Find the trip first
-    const trip = await Trip.findById(id);
-    if (!trip) {
-      return res.status(404).json({ success: false, message: "Trip not found." });
-    }
-
-    // 2. CHECK 1: Is the trip currently live?
     if (trip.status === 'ONGOING') {
-      return res.status(400).json({ 
-        success: false, 
-        message: "Action Blocked: Cannot delete a Live Trip. The driver has started the ride." 
-      });
+        return res.status(400).json({ message: "Cannot delete a Live Trip." });
     }
 
-    // 3. CHECK 2: Are there passengers booked?
-    // We check if any booking exists for this trip that is not Cancelled or Completed.
-    const activeBookingsCount = await Booking.countDocuments({
-      trip: id,
-      status: { $in: ['WAITING', 'BOARDED'] } // Only active passengers
-    });
-
-    if (activeBookingsCount > 0) {
-      return res.status(400).json({ 
-        success: false, 
-        message: `Action Blocked: There are ${activeBookingsCount} active passengers booked on this trip.` 
-      });
+    // Optional: Check bookings before deleting
+    const activeBookings = await Booking.countDocuments({ trip: req.params.id, status: 'WAITING' });
+    if (activeBookings > 0) {
+        return res.status(400).json({ message: `Cannot delete. ${activeBookings} passengers are waiting.` });
     }
 
-    // 4. Safe to Delete
-    await Trip.findByIdAndDelete(id);
-
-    res.status(200).json({ success: true, message: "Trip deleted successfully." });
-
+    await Trip.findByIdAndDelete(req.params.id);
+    res.status(200).json({ success: true, message: "Trip deleted." });
   } catch (error) {
-    console.error("Delete Trip Error:", error);
-    res.status(500).json({ success: false, message: "Failed to delete trip." });
+    res.status(500).json({ success: false, message: error.message });
   }
 };
-
 // ---------------- FIND AVAILABLE DRIVERS ----------------
 exports.findAvailableDrivers = async (req, res) => {
   try {

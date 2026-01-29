@@ -6,18 +6,23 @@ const { getIO } = require('../sockets/socketHandler');
 // ==========================================
 // 1. GET AVAILABLE ROUTES (For Home List)
 // ==========================================
+// ==========================================
+// 1. GET AVAILABLE ROUTES (For Home List)
+// ==========================================
 exports.getActiveTrips = async (req, res) => {
   try {
+    // Fetch trips that are Scheduled OR Ongoing
     const trips = await Trip.find({ 
-      status: { $in: ['SCHEDULED', 'ONGOING'] },
-      isActive: true 
+      status: { $in: ['SCHEDULED', 'ONGOING'] }
+      // Removed "isActive: true" strict check to prevent hiding trips during testing
+      // You can re-enable it if your logic strictly manages this boolean
     })
     .populate('driver', 'name email')
-    .populate('bus', 'number seatingCapacity model'); // ✅ Gets Model for list
+    .populate('bus', 'number seatingCapacity model');
 
     res.status(200).json({ success: true, count: trips.length, data: trips });
   } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
+    res.status(500).json({ success: false, message: "Failed to load routes." });
   }
 };
 

@@ -1,54 +1,273 @@
+const mongoose = require('mongoose');
 const Trip = require('../models/Trip');
+const Booking = require('../models/Booking');
 const DriverLocation = require('../models/DriverLocation');
-const Message = require('../models/Message');
-const User = require('../models/User');
+const { getIO } = require('../sockets/socketHandler'); 
 
-// Get all assigned trips for the driver
-exports.getAssignedTrips = async (req, res) => {
-  const trips = await Trip.find({ driver: req.user._id }).populate('stops.passengers', 'name email profilePic');
-  res.json(trips);
+// ==========================================
+// 1. SMART DASHBOARD (Crash Recovery & Schedule)
+// ==========================================
+exports.getDriverDashboard = async (req, res) => {
+  try {
+    const driverId = req.user._id;
+
+    // A. CRASH CHECK: Is there an unfinished ONGOING trip?
+    // We check this first to auto-recover the app state if it crashed.
+    const activeTrip = await Trip.findOne({
+      driver: driverId,
+      status: 'ONGOING'
+    })
+    .populate('bus', 'number model seatingCapacity')
+    .lean();
+
+    // If active trip exists, FORCE the app to Live Screen
+    if (activeTrip) {
+      const manifest = await getPassengerManifest(activeTrip._id);
+      
+      return res.status(200).json({
+        success: true,
+        state: 'ONGOING', // Frontend: Switch to Live Map
+        trip: { ...activeTrip, manifest }
+      });
+    }
+
+    // B. SCHEDULE CHECK: Get Assigned Trips
+    // ⚠️ FIXED: Removed strict "Today" filter. 
+    // If a trip is SCHEDULED and assigned to this driver, show it!
+    const scheduledTrips = await Trip.find({
+      driver: driverId,
+      status: 'SCHEDULED' 
+    })
+    .populate('bus', 'number model')
+    .sort({ startTime: 1 }) // Show earliest first
+    .lean();
+
+    return res.status(200).json({
+      success: true,
+      state: 'IDLE', // Frontend: Show List
+      trips: scheduledTrips
+    });
+
+  } catch (error) {
+    console.error("Driver Dashboard Error:", error);
+    res.status(500).json({ 
+        success: false, 
+        message: "Failed to load dashboard. Please try again." 
+    });
+  }
 };
 
-// Start a trip
+
+
+// ==========================================
+// 2. START TRIP (With 15-Minute Guard)
+// ==========================================
 exports.startTrip = async (req, res) => {
-  const trip = await Trip.findById(req.params.tripId);
-  if (!trip || trip.driver.toString() !== req.user._id.toString())
-    return res.status(403).json({ message: 'Not authorized' });
+  try {
+    const { tripId } = req.params;
+    
+    // 1. Fetch Trip Details First
+    const tripCheck = await Trip.findById(tripId);
+    if (!tripCheck) return res.status(404).json({ message: "Trip not found" });
 
-  trip.status = 'running';
-  trip.startedAt = new Date();
-  await trip.save();
-  res.json(trip);
+    // 2. CHECK 1: Is another trip running?
+    const conflict = await Trip.findOne({ 
+        driver: req.user._id, 
+        status: 'ONGOING',
+        _id: { $ne: tripId }
+    });
+    if (conflict) {
+        return res.status(400).json({ success: false, message: "Please finish your current trip first." });
+    }
+
+    // 3. ✅ CHECK 2: THE 15-MINUTE RULE
+    const now = new Date();
+    const startTime = new Date(tripCheck.startTime);
+    const diffMs = startTime - now; // Milliseconds difference
+    const diffMins = Math.ceil(diffMs / (1000 * 60)); // Convert to Minutes
+
+    // If trip is in the future (>15 mins away), Block it.
+    // (Note: If diffMins is negative, it means we are LATE, which is allowed)
+    if (diffMins > 15) {
+        return res.status(400).json({ 
+            success: false, 
+            message: `Too early! You can start this trip in ${diffMins - 15} minutes.` 
+        });
+    }
+
+    // 4. Proceed to Start
+    const trip = await Trip.findByIdAndUpdate(
+        tripId,
+        { status: 'ONGOING', startTime: new Date(), isActive: true }, // Set ACTUAL start time
+        { new: true }
+    ).populate('bus', 'number model');
+
+    // 5. Notify Passengers
+    try {
+        const io = getIO();
+        io.to(`trip_${tripId}`).emit('trip_status_update', { 
+            status: 'ONGOING', 
+            message: `Bus ${trip.bus?.number || ''} has started the trip!` 
+        });
+    } catch (err) { console.log("Socket Error:", err.message); }
+
+    res.status(200).json({ success: true, trip });
+
+  } catch (error) {
+    console.error("Start Trip Error:", error);
+    res.status(500).json({ success: false, message: error.message });
+  }
 };
 
-// End a trip
+// ==========================================
+// 3. END TRIP
+// ==========================================
 exports.endTrip = async (req, res) => {
-  const trip = await Trip.findById(req.params.tripId);
-  if (!trip || trip.driver.toString() !== req.user._id.toString())
-    return res.status(403).json({ message: 'Not authorized' });
+  try {
+    const { tripId } = req.params;
 
-  trip.status = 'completed';
-  trip.endedAt = new Date();
-  await trip.save();
-  res.json(trip);
+    const trip = await Trip.findByIdAndUpdate(
+        tripId,
+        { status: 'COMPLETED', endTime: new Date(), isActive: false },
+        { new: true }
+    );
+
+    if (!trip) {
+        return res.status(404).json({ success: false, message: "Trip not found." });
+    }
+
+    // Cleanup Location Data
+    await DriverLocation.deleteOne({ trip: tripId });
+
+    // ⚡ Real-time: Notify Passengers
+    try {
+        const io = getIO();
+        io.to(`trip_${tripId}`).emit('trip_status_update', { 
+            status: 'COMPLETED', 
+            message: "Trip Completed. Thank you for riding!" 
+        });
+    } catch (err) { console.log("Socket Error:", err.message); }
+
+    res.status(200).json({ success: true, trip });
+
+  } catch (error) {
+    console.error("End Trip Error:", error);
+    res.status(500).json({ success: false, message: error.message });
+  }
 };
 
-// Get next stop of the trip
-exports.getNextStop = async (req, res) => {
-  const trip = await Trip.findById(req.params.tripId).populate('stops.passengers', 'name');
-  if (!trip) return res.status(404).json({ message: 'Trip not found' });
+// ==========================================
+// 4. ARRIVE AT STOP
+// ==========================================
+exports.arriveAtStop = async (req, res) => {
+    try {
+        const { tripId, stopId } = req.body;
+        
+        const trip = await Trip.findById(tripId);
+        if (!trip) return res.status(404).json({ success: false, message: "Trip not found" });
 
-  const nextStop = trip.stops.find(stop => !stop.completed);
-  res.json(nextStop || { message: 'All stops completed' });
+        const stopIndex = trip.stops.findIndex(s => s._id.toString() === stopId);
+        if (stopIndex === -1) return res.status(404).json({ success: false, message: "Stop not found in this trip" });
+
+        // ⚡ Real-time: Notify Passengers
+        const io = getIO();
+        io.to(`trip_${tripId}`).emit('bus_arrival', { 
+            stopId, 
+            stopName: trip.stops[stopIndex].name,
+            message: `Bus is arriving at ${trip.stops[stopIndex].name}`
+        });
+
+        res.status(200).json({ success: true, message: "Arrival recorded" });
+
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+}
+
+// ==========================================
+// 5. GET DETAILED MANIFEST (List)
+// ==========================================
+exports.getTripManifest = async (req, res) => {
+  try {
+    const { tripId } = req.params;
+
+    const bookings = await Booking.find({
+      trip: tripId,
+      status: { $in: ['WAITING', 'BOARDED'] }
+    })
+    .populate('passenger', 'name phone profilePic')
+    .sort({ 'pickupLocation.stopId': 1 }); // Sorted by route order
+
+    // Grouping Logic for UI
+    const groupedManifest = bookings.reduce((acc, booking) => {
+      const stopName = booking.pickupLocation.name || "Unknown Stop";
+      if (!acc[stopName]) acc[stopName] = [];
+      acc[stopName].push(booking);
+      return acc;
+    }, {});
+
+    res.status(200).json({ success: true, manifest: groupedManifest });
+
+  } catch (error) {
+    res.status(500).json({ success: false, message: "Failed to load passenger list." });
+  }
 };
 
-// Get passengers count per stop
-exports.getPassengersCount = async (req, res) => {
-  const trip = await Trip.findById(req.params.tripId).populate('stops.passengers', 'name');
-  if (!trip) return res.status(404).json({ message: 'Trip not found' });
+// ==========================================
+// 6. UPDATE PASSENGER STATUS
+// ==========================================
+exports.updatePassengerStatus = async (req, res) => {
+  try {
+    const { bookingId, status } = req.body; 
 
-  const stop = trip.stops.id(req.params.stopId);
-  if (!stop) return res.status(404).json({ message: 'Stop not found' });
+    if (!['BOARDED', 'NO_SHOW', 'CANCELLED'].includes(status)) {
+        return res.status(400).json({ success: false, message: "Invalid Status" });
+    }
 
-  res.json({ stopName: stop.name, passengersCount: stop.passengers.length });
+    const booking = await Booking.findByIdAndUpdate(
+      bookingId,
+      { status: status },
+      { new: true }
+    ).populate('passenger', 'name');
+
+    if (!booking) return res.status(404).json({ success: false, message: "Booking not found" });
+
+    // ⚡ Real-time Notifications
+    try {
+        const io = getIO();
+        
+        // Notify specific passenger
+        io.to(`user_${booking.passenger._id}`).emit('booking_status_update', {
+            status: status,
+            message: status === 'BOARDED' ? "Welcome aboard!" : "You were marked as a No-Show."
+        });
+
+        // Notify Driver UI (to update list counts instantly)
+        io.to(`trip_${booking.trip}`).emit('manifest_update', {
+            bookingId: booking._id,
+            status: status
+        });
+    } catch(e) { console.log("Socket Error:", e.message); }
+
+    res.status(200).json({ success: true, message: "Status updated", booking });
+
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
 };
+
+// === HELPER FUNCTION ===
+async function getPassengerManifest(tripId) {
+    const bookings = await Booking.find({
+        trip: tripId,
+        status: { $in: ['WAITING'] } // Only count waiting for the dashboard badge
+    }).select('pickupLocation');
+
+    const counts = {};
+    bookings.forEach(b => {
+        const stopName = b.pickupLocation.name;
+        if (!counts[stopName]) counts[stopName] = 0;
+        counts[stopName]++; 
+    });
+    return counts; 
+}
