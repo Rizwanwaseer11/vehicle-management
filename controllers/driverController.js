@@ -10,9 +10,11 @@ const { getIO } = require('../sockets/socketHandler');
 exports.getDriverDashboard = async (req, res) => {
   try {
     const driverId = req.user._id;
+    const todayStart = new Date();
+    todayStart.setHours(0,0,0,0);
 
     // A. CRASH CHECK: Is there an unfinished ONGOING trip?
-    // We check this first to auto-recover the app state if it crashed.
+    // This logic allows the driver to reboot their phone and immediately resume.
     const activeTrip = await Trip.findOne({
       driver: driverId,
       status: 'ONGOING'
@@ -22,6 +24,7 @@ exports.getDriverDashboard = async (req, res) => {
 
     // If active trip exists, FORCE the app to Live Screen
     if (activeTrip) {
+      // Fetch the full manifest so the UI creates the list immediately
       const manifest = await getPassengerManifest(activeTrip._id);
       
       return res.status(200).json({
@@ -32,11 +35,11 @@ exports.getDriverDashboard = async (req, res) => {
     }
 
     // B. SCHEDULE CHECK: Get Assigned Trips
-    // ⚠️ FIXED: Removed strict "Today" filter. 
-    // If a trip is SCHEDULED and assigned to this driver, show it!
+    // We fetch trips for today and the future to keep the schedule populated
     const scheduledTrips = await Trip.find({
       driver: driverId,
-      status: 'SCHEDULED' 
+      status: 'SCHEDULED',
+      startTime: { $gte: todayStart } // Only show future/today trips
     })
     .populate('bus', 'number model')
     .sort({ startTime: 1 }) // Show earliest first
@@ -44,7 +47,7 @@ exports.getDriverDashboard = async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      state: 'IDLE', // Frontend: Show List
+      state: 'IDLE', // Frontend: Show Trip List
       trips: scheduledTrips
     });
 
@@ -57,8 +60,6 @@ exports.getDriverDashboard = async (req, res) => {
   }
 };
 
-
-
 // ==========================================
 // 2. START TRIP (With 15-Minute Guard)
 // ==========================================
@@ -66,7 +67,7 @@ exports.startTrip = async (req, res) => {
   try {
     const { tripId } = req.params;
     
-    // 1. Fetch Trip Details First
+    // 1. Fetch Trip Details
     const tripCheck = await Trip.findById(tripId);
     if (!tripCheck) return res.status(404).json({ message: "Trip not found" });
 
@@ -77,17 +78,19 @@ exports.startTrip = async (req, res) => {
         _id: { $ne: tripId }
     });
     if (conflict) {
-        return res.status(400).json({ success: false, message: "Please finish your current trip first." });
+        return res.status(400).json({ 
+            success: false, 
+            message: "You have another ongoing trip. Please finish it first." 
+        });
     }
 
-    // 3. ✅ CHECK 2: THE 15-MINUTE RULE
+    // 3. CHECK 2: THE 15-MINUTE RULE
     const now = new Date();
     const startTime = new Date(tripCheck.startTime);
-    const diffMs = startTime - now; // Milliseconds difference
-    const diffMins = Math.ceil(diffMs / (1000 * 60)); // Convert to Minutes
+    const diffMs = startTime - now;
+    const diffMins = Math.ceil(diffMs / (1000 * 60)); 
 
-    // If trip is in the future (>15 mins away), Block it.
-    // (Note: If diffMins is negative, it means we are LATE, which is allowed)
+    // Allow start if within 15 mins OR if the trip is already late (negative diff)
     if (diffMins > 15) {
         return res.status(400).json({ 
             success: false, 
@@ -98,7 +101,7 @@ exports.startTrip = async (req, res) => {
     // 4. Proceed to Start
     const trip = await Trip.findByIdAndUpdate(
         tripId,
-        { status: 'ONGOING', startTime: new Date(), isActive: true }, // Set ACTUAL start time
+        { status: 'ONGOING', startTime: new Date(), isActive: true }, 
         { new: true }
     ).populate('bus', 'number model');
 
@@ -120,12 +123,27 @@ exports.startTrip = async (req, res) => {
 };
 
 // ==========================================
-// 3. END TRIP
+// 3. END TRIP (With Strict Passenger Check)
 // ==========================================
 exports.endTrip = async (req, res) => {
   try {
     const { tripId } = req.params;
 
+    // 1. 🛑 STRICT CHECK: Are there unprocessed passengers?
+    // We count bookings that are still 'WAITING'.
+    const pendingPassengers = await Booking.countDocuments({
+        trip: tripId,
+        status: 'WAITING'
+    });
+
+    if (pendingPassengers > 0) {
+        return res.status(400).json({ 
+            success: false, 
+            message: `Cannot end trip yet! You have ${pendingPassengers} passengers waiting. Please mark them as Boarded or No-Show.` 
+        });
+    }
+
+    // 2. Proceed to End Trip
     const trip = await Trip.findByIdAndUpdate(
         tripId,
         { status: 'COMPLETED', endTime: new Date(), isActive: false },
@@ -136,10 +154,10 @@ exports.endTrip = async (req, res) => {
         return res.status(404).json({ success: false, message: "Trip not found." });
     }
 
-    // Cleanup Location Data
+    // 3. Cleanup Location Data (Save DB space)
     await DriverLocation.deleteOne({ trip: tripId });
 
-    // ⚡ Real-time: Notify Passengers
+    // 4. Notify Passengers & Frontend
     try {
         const io = getIO();
         io.to(`trip_${tripId}`).emit('trip_status_update', { 
@@ -167,15 +185,21 @@ exports.arriveAtStop = async (req, res) => {
         if (!trip) return res.status(404).json({ success: false, message: "Trip not found" });
 
         const stopIndex = trip.stops.findIndex(s => s._id.toString() === stopId);
-        if (stopIndex === -1) return res.status(404).json({ success: false, message: "Stop not found in this trip" });
+        if (stopIndex === -1) return res.status(404).json({ success: false, message: "Stop not found" });
+
+        // Update Current Stop Index (Optional, but good for tracking)
+        trip.currentStopIndex = stopIndex;
+        await trip.save();
 
         // ⚡ Real-time: Notify Passengers
-        const io = getIO();
-        io.to(`trip_${tripId}`).emit('bus_arrival', { 
-            stopId, 
-            stopName: trip.stops[stopIndex].name,
-            message: `Bus is arriving at ${trip.stops[stopIndex].name}`
-        });
+        try {
+            const io = getIO();
+            io.to(`trip_${tripId}`).emit('bus_arrival', { 
+                stopId, 
+                stopName: trip.stops[stopIndex].name,
+                message: `Bus is arriving at ${trip.stops[stopIndex].name}`
+            });
+        } catch (e) {}
 
         res.status(200).json({ success: true, message: "Arrival recorded" });
 
@@ -185,20 +209,22 @@ exports.arriveAtStop = async (req, res) => {
 }
 
 // ==========================================
-// 5. GET DETAILED MANIFEST (List)
+// 5. GET TRIP MANIFEST (For Driver List)
 // ==========================================
 exports.getTripManifest = async (req, res) => {
   try {
     const { tripId } = req.params;
 
+    // Fetch all relevant bookings (Waiting & Boarded)
+    // Boarded allows driver to see who is currently on the bus
     const bookings = await Booking.find({
       trip: tripId,
       status: { $in: ['WAITING', 'BOARDED'] }
     })
     .populate('passenger', 'name phone profilePic')
-    .sort({ 'pickupLocation.stopId': 1 }); // Sorted by route order
+    .sort({ 'pickupLocation.stopId': 1 }); 
 
-    // Grouping Logic for UI
+    // Grouping Logic for Frontend UI
     const groupedManifest = bookings.reduce((acc, booking) => {
       const stopName = booking.pickupLocation.name || "Unknown Stop";
       if (!acc[stopName]) acc[stopName] = [];
@@ -214,12 +240,13 @@ exports.getTripManifest = async (req, res) => {
 };
 
 // ==========================================
-// 6. UPDATE PASSENGER STATUS
+// 6. UPDATE PASSENGER STATUS (The Action Button)
 // ==========================================
 exports.updatePassengerStatus = async (req, res) => {
   try {
     const { bookingId, status } = req.body; 
 
+    // Strict validation
     if (!['BOARDED', 'NO_SHOW', 'CANCELLED'].includes(status)) {
         return res.status(400).json({ success: false, message: "Invalid Status" });
     }
@@ -236,18 +263,18 @@ exports.updatePassengerStatus = async (req, res) => {
     try {
         const io = getIO();
         
-        // Notify specific passenger
+        // 1. Notify Passenger ("You are Boarded")
         io.to(`user_${booking.passenger._id}`).emit('booking_status_update', {
             status: status,
             message: status === 'BOARDED' ? "Welcome aboard!" : "You were marked as a No-Show."
         });
 
-        // Notify Driver UI (to update list counts instantly)
+        // 2. Notify Driver UI (Syncs all driver devices if logged in multiple places)
         io.to(`trip_${booking.trip}`).emit('manifest_update', {
             bookingId: booking._id,
             status: status
         });
-    } catch(e) { console.log("Socket Error:", e.message); }
+    } catch(e) { console.log("Socket Warning:", e.message); }
 
     res.status(200).json({ success: true, message: "Status updated", booking });
 
@@ -256,11 +283,12 @@ exports.updatePassengerStatus = async (req, res) => {
   }
 };
 
-// === HELPER FUNCTION ===
+// === HELPER: Get Passenger Counts ===
+// Used by Dashboard to show badges (e.g., "5 Waiting")
 async function getPassengerManifest(tripId) {
     const bookings = await Booking.find({
         trip: tripId,
-        status: { $in: ['WAITING'] } // Only count waiting for the dashboard badge
+        status: { $in: ['WAITING'] } 
     }).select('pickupLocation');
 
     const counts = {};

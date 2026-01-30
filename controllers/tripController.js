@@ -56,6 +56,10 @@ exports.createTrip = async (req, res) => {
     }
 
     // --- STEP 4: SAVE ---
+    // ✅ LOGIC FIX:
+    // 1. If 'Daily/Weekday' (Template) -> isActive: FALSE (Wait for Scheduler)
+    // 2. If 'None' (One-Time/Emergency) -> isActive: TRUE (Driver sees it NOW)
+    
     const trip = await Trip.create({
       driver,
       bus,
@@ -71,13 +75,16 @@ exports.createTrip = async (req, res) => {
       polyline: routePolyline,
       recurrence: recurrence || 'NONE',
       isTemplate: isTemplate,
-      isActive: true,
+      
+      // ✅ DYNAMIC ACTIVE STATUS
+      isActive: !isTemplate, 
+      
       status: 'SCHEDULED'
     });
 
     return res.status(201).json({
       success: true,
-      message: isTemplate ? "Schedule Template Created" : "Trip Created Successfully",
+      message: isTemplate ? "Schedule Template Created (Hidden until Midnight)" : "Emergency Trip Created (Active Now)",
       trip
     });
 
@@ -173,7 +180,7 @@ exports.updateTrip = async (req, res) => {
         driver, bus, routeName, stops, totalKm, startTime, routePolyline, recurrence, status 
     } = req.body;
 
-    // --- 🚨 STEP 1: VALIDATIONS (Same as Create) ---
+    // --- 🚨 STEP 1: VALIDATIONS ---
     const missingFields = [];
     if (!driver) missingFields.push("Driver");
     if (!bus) missingFields.push("Bus");
@@ -190,7 +197,6 @@ exports.updateTrip = async (req, res) => {
     }
 
     // --- 🚨 STEP 2: CONFLICT CHECK ---
-    // If trip is ONGOING, ensure resources aren't double-booked (excluding self)
     if (status === 'ONGOING') {
        const conflict = await Trip.findOne({
          _id: { $ne: id }, 
@@ -202,8 +208,14 @@ exports.updateTrip = async (req, res) => {
        }
     }
 
-    // --- STEP 3: PREPARE UPDATE ---
+    // --- 🚨 STEP 3: PREPARE UPDATE (Fixing Logic Here) ---
+    // 1. Determine if it's a template (Daily/Weekdays)
     const isTemplate = recurrence && recurrence !== 'NONE';
+
+    // 2. ✅ CRITICAL FIX: Update 'isActive' based on the new recurrence type
+    // If Admin changes it to DAILY/WEEKDAYS -> isActive becomes FALSE (Hidden)
+    // If Admin changes it to NONE -> isActive becomes TRUE (Visible)
+    const isActive = !isTemplate; 
 
     const updateData = {
       driver, 
@@ -214,7 +226,8 @@ exports.updateTrip = async (req, res) => {
       polyline: routePolyline,
       recurrence: recurrence || 'NONE',
       isTemplate: isTemplate,
-      status: status, // Allow status updates (e.g. Admin fixing a mistake)
+      isActive: isActive, // ✅ Updated Logic applied here
+      status: status, 
       stops: stops.map(s => ({
         name: s.name,
         latitude: Number(s.latitude),
@@ -227,14 +240,17 @@ exports.updateTrip = async (req, res) => {
 
     if (!updatedTrip) return res.status(404).json({ message: "Trip not found" });
 
-    res.status(200).json({ success: true, message: "Trip updated successfully", trip: updatedTrip });
+    res.status(200).json({ 
+        success: true, 
+        message: isTemplate ? "Schedule Updated (Hidden Template)" : "Trip Updated (Active Now)", 
+        trip: updatedTrip 
+    });
 
   } catch (error) {
     console.error("Update Trip Error:", error);
     res.status(500).json({ success: false, error: error.message });
   }
 };
-
 // ==========================================
 // 5. TOGGLE ACTIVE STATUS
 // ==========================================

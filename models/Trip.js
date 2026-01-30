@@ -43,7 +43,7 @@ const tripSchema = new mongoose.Schema({
   stops: [stopSchema], 
 
   // True = Visible to Scheduler/Passengers. False = Disabled/Hidden.
-  isActive: { type: Boolean, default: true }, 
+  isActive: { type: Boolean, default: false }, 
 
   status: {
     type: String,

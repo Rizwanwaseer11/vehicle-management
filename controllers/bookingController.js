@@ -13,6 +13,7 @@ exports.getActiveTrips = async (req, res) => {
   try {
     // Fetch trips that are Scheduled OR Ongoing
     const trips = await Trip.find({ 
+      isActive: true,
       status: { $in: ['SCHEDULED', 'ONGOING'] }
       // Removed "isActive: true" strict check to prevent hiding trips during testing
       // You can re-enable it if your logic strictly manages this boolean
