@@ -2,7 +2,7 @@ const mongoose = require('mongoose');
 const Trip = require('../models/Trip');
 const Booking = require('../models/Booking');
 const DriverLocation = require('../models/DriverLocation');
-const { getIO } = require('../sockets/socketHandler'); 
+const { getIO } = require('../utils/socket'); 
 
 // ==========================================
 // 1. SMART DASHBOARD (Crash Recovery & Schedule)

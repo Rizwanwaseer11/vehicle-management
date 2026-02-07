@@ -258,7 +258,7 @@ const allowedOrigins = [
 
   const app = express();
   const server = http.createServer(app);
-
+// shhsh
   // ----- Trust proxy -----
   app.set('trust proxy', 1);
 

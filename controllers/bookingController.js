@@ -1,7 +1,8 @@
 const mongoose = require('mongoose');
 const Booking = require('../models/Booking');
 const Trip = require('../models/Trip');
-const { getIO } = require('../sockets/socketHandler');
+const { getIO } = require('../utils/socket');
+// const { getIO } = require('../sockets/socketHandler');
 
 // ==========================================
 // 1. GET AVAILABLE ROUTES (For Home List)
