@@ -194,7 +194,7 @@ exports.arriveAtStop = async (req, res) => {
         // ⚡ Real-time: Notify Passengers
         try {
             const io = getIO();
-            io.to(`trip_${tripId}`).emit('bus_arrival', { 
+            io.to(`trip:${tripId}`).emit('bus_arrival', { 
                 stopId, 
                 stopName: trip.stops[stopIndex].name,
                 message: `Bus is arriving at ${trip.stops[stopIndex].name}`

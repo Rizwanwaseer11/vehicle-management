@@ -210,9 +210,15 @@
 //   server.listen(PORT, () => logger.info(`Worker PID ${process.pid} listening on ${PORT}`));
 // })();
 
+// 
+
 require('dotenv').config();
-const Redis = require('ioredis');
-const { createAdapter } = require('@socket.io/redis-adapter');
+// ❌ REMOVED raw Redis/Socket imports (They are now inside utils/socket.js)
+// const Redis = require('ioredis'); 
+// const { createAdapter } = require('@socket.io/redis-adapter'); 
+// const { Server } = require('socket.io'); 
+
+const socketUtil = require('./utils/socket'); // ✅ ADDED: The Singleton Utility
 const socketHandler = require('./sockets/socketHandler');
 const express = require('express');
 const http = require('http');
@@ -222,7 +228,6 @@ const helmet = require('helmet');
 const compression = require('compression');
 const morgan = require('morgan');
 const rateLimit = require('express-rate-limit');
-const { Server } = require('socket.io');
 const routes = require('./routes');
 const logger = require('./utils/logger');
 const initScheduler = require('./utils/scheduler');
@@ -249,6 +254,7 @@ const limiter = rateLimit({
 const allowedOrigins = [
   'https://vehicle-management-front-end.vercel.app',
   'http://localhost:5173',
+  '*' // Temporarily helpful for mobile apps if strictly defined origins fail
 ];
 
 (async () => {
@@ -258,7 +264,7 @@ const allowedOrigins = [
 
   const app = express();
   const server = http.createServer(app);
-// shhsh
+
   // ----- Trust proxy -----
   app.set('trust proxy', 1);
 
@@ -293,38 +299,17 @@ const allowedOrigins = [
     res.status(500).json({ error: err.message });
   });
 
-  // ----- Socket.IO -----
-  const io = new Server(server, { cors: { origin: '*' } });
+  // ============================================================
+  // ✅ SOCKET.IO MANAGEMENT (Delegate to Singleton Utility)
+  // ============================================================
+  
+  // 1. Initialize Global Socket (Handles Redis & Server Binding internally)
+  const io = await socketUtil.init(server);
+  logger.info('✅ Socket.io Initialized via Utility');
 
-  // ✅ FIXED REDIS BLOCK (Crash-Proof for Local & Production)
-  // This logic works with Clustering but prevents crashing if Redis is offline locally.
-  try {
-      // 1. Define Connection Options
-      const redisUrl = process.env.REDIS_URL || 'redis://127.0.0.1:6379';
-      
-      const pubClient = new Redis(redisUrl, {
-          // ⚠️ CRITICAL: Prevents 'MaxRetriesPerRequestError'
-          maxRetriesPerRequest: null,
-          // Force IPv4 (Fixes local Memurai connection issues)
-          family: 4 
-      });
-
-      const subClient = pubClient.duplicate();
-
-      // 2. Attach Error Handlers (Prevents 'missing error handler' crash)
-      pubClient.on('error', (err) => logger.error(`Redis Pub Error: ${err.message}`));
-      subClient.on('error', (err) => logger.error(`Redis Sub Error: ${err.message}`));
-
-      // 3. Enable Adapter
-      io.adapter(createAdapter(pubClient, subClient));
-      logger.info('Socket.IO Redis adapter enabled');
-
-  } catch (err) {
-      // If Redis fails, log it but continue using Memory (server won't crash)
-      logger.error('Redis Adapter failed to initialize (running in memory mode)', err);
-  }
-
+  // 2. Attach Logic Handler
   socketHandler(io);
+
 
   // ----- Start Server -----
   initScheduler(); // Start the Scheduler when server starts
