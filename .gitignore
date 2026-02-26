@@ -45,3 +45,6 @@ Thumbs.db
 *.pid
 *.seed
 *.pid.lock
+
+# Firebase admin SDK keys (must never be committed)
+*firebase-adminsdk*.json

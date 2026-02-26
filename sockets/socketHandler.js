@@ -2,6 +2,8 @@ const jwt = require('jsonwebtoken');
 const mongoose = require('mongoose');
 const Message = require('../models/Message');
 const DriverLocation = require('../models/DriverLocation');
+const DeviceToken = require('../models/DeviceTokens');
+const { sendPushNotification } = require('../utils/fcmHelper');
 
 // ===== Presence (in-memory for now; move to Redis when cluster enabled) =====
 const userSockets = new Map(); // userId -> Set(socket.id)
@@ -33,10 +35,32 @@ async function canJoinTrip({ userId, role, tripId }) {
   return true;
 }
 
-// Stub for later FCM/APNs (direct FCM for Android; APNs for iOS)
+// Push to offline users only
 async function notifyUserLater(userId, payload) {
-  // if (!isUserOnline(userId)) { sendPush(userId, payload) }
-  // For now: do nothing. Add FCM/APNs after keys.
+  try {
+    if (!userId || isUserOnline(userId)) return;
+
+    const tokens = await DeviceToken.find({ userId, provider: 'fcm' })
+      .select('token -_id')
+      .lean();
+    if (!tokens.length) return;
+
+    const title = payload?.title || 'New message';
+    const body = payload?.body || 'You have a new message';
+    const data = payload?.data || payload || {};
+
+    const tokenList = tokens.map((t) => t.token);
+    const result = await sendPushNotification(tokenList, title, body, data, {
+      androidPriority: 'high',
+      apnsPriority: '10'
+    });
+
+    if (result?.invalidTokens?.length) {
+      await DeviceToken.deleteMany({ token: { $in: result.invalidTokens } });
+    }
+  } catch (e) {
+    console.error('notifyUserLater error:', e.message);
+  }
 }
 
 module.exports = (io) => {
@@ -206,9 +230,14 @@ module.exports = (io) => {
 
           // Push hook for offline receiver
           await notifyUserLater(receiverId, {
-            type: 'CHAT_MESSAGE',
-            tripId,
-            messageId: message._id
+            title: message?.sender?.name || 'New message',
+            body: message?.text || 'You have a new message',
+            data: {
+              type: 'CHAT_MESSAGE',
+              tripId,
+              messageId: message._id,
+              senderId: message?.sender?._id || null
+            }
           });
         } else {
           // Trip group chat

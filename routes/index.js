@@ -9,6 +9,7 @@ router.use('/buses' , require('./busRoutes'));
 
 router.use('/messages', require('./messageRoutes')); // All roles
 router.use('/notifications', require('./notificationRoutes')); // Admin send / all read
+router.use('/push', require('./pushRoutes')); // Device token registration
 router.use('/driver', require('./driverRoutes')); // Driver role routes
 router.use('/passenger', require('./passengerRoutes')); // Passenger role routes
 

@@ -3,6 +3,8 @@ const Trip = require('../models/Trip');
 const Booking = require('../models/Booking');
 const DriverLocation = require('../models/DriverLocation');
 const { getIO } = require('../utils/socket'); 
+const Notification = require('../models/Notification');
+const { sendToUsers } = require('../utils/pushService');
 
 // ==========================================
 // 1. SMART DASHBOARD (Crash Recovery & Schedule)
@@ -108,11 +110,49 @@ exports.startTrip = async (req, res) => {
     // 5. Notify Passengers
     try {
         const io = getIO();
-        io.to(`trip_${tripId}`).emit('trip_status_update', { 
+        io.to(`trip:${tripId}`).emit('trip_status_update', { 
             status: 'ONGOING', 
             message: `Bus ${trip.bus?.number || ''} has started the trip!` 
         });
     } catch (err) { console.log("Socket Error:", err.message); }
+
+    // 6. Push + Store Notification for Booked Passengers
+    try {
+        const bookings = await Booking.find({
+            trip: tripId,
+            status: { $in: ['WAITING', 'BOARDED'] }
+        }).select('passenger').lean();
+
+        const passengerIds = Array.from(
+            new Set(bookings.map((b) => String(b.passenger)))
+        );
+
+        if (passengerIds.length) {
+            const title = 'Trip Started';
+            const body = `Bus ${trip.bus?.number || ''} has started the trip.`;
+
+            await Notification.create({
+                title,
+                body,
+                sender: req.user._id,
+                receivers: passengerIds
+            });
+
+            await sendToUsers({
+                userIds: passengerIds,
+                title,
+                body,
+                data: {
+                    type: 'TRIP_STARTED',
+                    tripId: String(tripId),
+                    busNumber: trip.bus?.number || ''
+                },
+                priority: 'high'
+            });
+        }
+    } catch (err) {
+        console.log('Trip start push error:', err.message);
+    }
 
     res.status(200).json({ success: true, trip });
 
@@ -160,7 +200,7 @@ exports.endTrip = async (req, res) => {
     // 4. Notify Passengers & Frontend
     try {
         const io = getIO();
-        io.to(`trip_${tripId}`).emit('trip_status_update', { 
+        io.to(`trip:${tripId}`).emit('trip_status_update', { 
             status: 'COMPLETED', 
             message: "Trip Completed. Thank you for riding!" 
         });
@@ -264,13 +304,13 @@ exports.updatePassengerStatus = async (req, res) => {
         const io = getIO();
         
         // 1. Notify Passenger ("You are Boarded")
-        io.to(`user_${booking.passenger._id}`).emit('booking_status_update', {
+        io.to(`user:${booking.passenger._id}`).emit('booking_status_update', {
             status: status,
             message: status === 'BOARDED' ? "Welcome aboard!" : "You were marked as a No-Show."
         });
 
         // 2. Notify Driver UI (Syncs all driver devices if logged in multiple places)
-        io.to(`trip_${booking.trip}`).emit('manifest_update', {
+        io.to(`trip:${booking.trip}`).emit('manifest_update', {
             bookingId: booking._id,
             status: status
         });

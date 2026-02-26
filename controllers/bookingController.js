@@ -2,6 +2,8 @@ const mongoose = require('mongoose');
 const Booking = require('../models/Booking');
 const Trip = require('../models/Trip');
 const { getIO } = require('../utils/socket');
+const Notification = require('../models/Notification');
+const { sendToUsers } = require('../utils/pushService');
 // const { getIO } = require('../sockets/socketHandler');
 
 // ==========================================
@@ -91,12 +93,40 @@ exports.createBooking = async (req, res) => {
     // E. Notify Driver (Real-time)
     try {
       const io = getIO();
-      io.to(`trip_${trip._id}`).emit('new_passenger', {
+      io.to(`trip:${trip._id}`).emit('new_passenger', {
         message: "New Passenger Added!",
         bookingId: newBooking._id,
         pickupName: selectedStop.name
       });
     } catch (err) { console.log("Socket warning:", err.message); }
+
+    // F. Notify Driver (Push for offline)
+    try {
+      const driverId = trip.driver?._id;
+      if (driverId) {
+        const title = 'New Passenger';
+        const body = `${selectedStop.name} pickup booked.`;
+        await Notification.create({
+          title,
+          body,
+          sender: passengerId,
+          receivers: [driverId]
+        });
+        await sendToUsers({
+          userIds: [driverId],
+          title,
+          body,
+          data: {
+            type: 'NEW_BOOKING',
+            tripId: String(trip._id),
+            bookingId: String(newBooking._id)
+          },
+          priority: 'high'
+        });
+      }
+    } catch (err) {
+      console.log('New booking push error:', err.message);
+    }
 
     res.status(201).json({ success: true, booking: newBooking });
 
@@ -128,8 +158,37 @@ exports.cancelBooking = async (req, res) => {
 
     try {
       const io = getIO();
-      io.to(`trip_${booking.trip}`).emit('passenger_cancelled', { bookingId: booking._id });
+      io.to(`trip:${booking.trip}`).emit('passenger_cancelled', { bookingId: booking._id });
     } catch (e) {}
+
+    // Notify Driver (Push)
+    try {
+      const trip = await Trip.findById(booking.trip).select('driver').lean();
+      const driverId = trip?.driver;
+      if (driverId) {
+        const title = 'Booking Cancelled';
+        const body = 'A passenger cancelled their ride.';
+        await Notification.create({
+          title,
+          body,
+          sender: req.user._id,
+          receivers: [driverId]
+        });
+        await sendToUsers({
+          userIds: [driverId],
+          title,
+          body,
+          data: {
+            type: 'BOOKING_CANCELLED',
+            tripId: String(booking.trip),
+            bookingId: String(booking._id)
+          },
+          priority: 'normal'
+        });
+      }
+    } catch (e) {
+      console.log('Cancel booking push error:', e.message);
+    }
 
     res.status(200).json({ success: true, message: "Ride cancelled." });
   } catch (error) {
