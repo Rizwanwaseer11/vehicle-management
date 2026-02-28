@@ -11,6 +11,67 @@ exports.getUserById = async (req, res) => {
   res.json(user);
 };
 
+exports.createUser = async (req, res) => {
+  try {
+    const {
+      name,
+      email,
+      phone,
+      password,
+      role,
+      roomNumber,
+      jobSite,
+      homeAddress,
+      licenseNumber,
+    } = req.body || {};
+
+    if (!name || !email || !phone || !password) {
+      return res.status(400).json({ message: 'Name, email, phone, and password are required.' });
+    }
+
+    if (!['driver', 'passenger'].includes(role)) {
+      return res.status(400).json({ message: 'Role must be driver or passenger.' });
+    }
+
+    if (role === 'passenger') {
+      if (!roomNumber || !jobSite) {
+        return res.status(400).json({ message: 'Room number and job site are required for passengers.' });
+      }
+    }
+
+    if (role === 'driver') {
+      if (!homeAddress || !licenseNumber) {
+        return res.status(400).json({ message: 'Home address and license number are required for drivers.' });
+      }
+    }
+
+    const exists = await User.findOne({ email });
+    if (exists) {
+      return res.status(400).json({ message: 'Email already exists' });
+    }
+
+    const user = await User.create({
+      name,
+      email,
+      phone,
+      password,
+      role,
+      roomNumber: role === 'passenger' ? roomNumber : undefined,
+      jobSite: role === 'passenger' ? jobSite : undefined,
+      homeAddress: role === 'driver' ? homeAddress : undefined,
+      licenseNumber: role === 'driver' ? licenseNumber : undefined,
+      status: 'approved',
+      isActive: true,
+    });
+
+    const sanitized = user.toObject();
+    delete sanitized.password;
+    res.status(201).json(sanitized);
+  } catch (err) {
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
 exports.updateUser = async (req, res) => {
   try {
     const user = await User.findById(req.params.id);
