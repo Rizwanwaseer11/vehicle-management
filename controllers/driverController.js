@@ -4,6 +4,7 @@ const Booking = require('../models/Booking');
 const DriverLocation = require('../models/DriverLocation');
 const { getIO } = require('../utils/socket'); 
 const Notification = require('../models/Notification');
+const User = require('../models/User');
 const { sendToUsers } = require('../utils/pushService');
 
 // ==========================================
@@ -106,6 +107,9 @@ exports.startTrip = async (req, res) => {
         { status: 'ONGOING', startTime: new Date(), isActive: true }, 
         { new: true }
     ).populate('bus', 'number model');
+    const startedAt = trip.startTime || new Date();
+    const startedAtIso = new Date(startedAt).toISOString();
+    const startedAtLabel = new Date(startedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
     // 5. Notify Passengers
     try {
@@ -120,7 +124,7 @@ exports.startTrip = async (req, res) => {
     try {
         const bookings = await Booking.find({
             trip: tripId,
-            status: { $in: ['WAITING', 'BOARDED'] }
+            status: { $in: ['WAITING'] }
         }).select('passenger').lean();
 
         const passengerIds = Array.from(
@@ -129,7 +133,7 @@ exports.startTrip = async (req, res) => {
 
         if (passengerIds.length) {
             const title = 'Trip Started';
-            const body = `Bus ${trip.bus?.number || ''} has started the trip.`;
+            const body = `Your trip has started. Bus ${trip.bus?.number || ''} at ${startedAtLabel}.`;
 
             await Notification.create({
                 title,
@@ -145,13 +149,53 @@ exports.startTrip = async (req, res) => {
                 data: {
                     type: 'TRIP_STARTED',
                     tripId: String(tripId),
-                    busNumber: trip.bus?.number || ''
+                    busNumber: trip.bus?.number || '',
+                    routeName: trip.routeName || '',
+                    startedAt: startedAtIso
                 },
                 priority: 'high'
             });
         }
     } catch (err) {
         console.log('Trip start push error:', err.message);
+    }
+
+    // 7. Notify Admins (Dashboard + Push)
+    try {
+        const admins = await User.find({
+            role: { $in: ['admin', 'employee'] },
+            isActive: true,
+            status: 'approved'
+        }).select('_id').lean();
+
+        const adminIds = admins.map((u) => u._id);
+        if (adminIds.length) {
+            const title = 'Trip Started';
+            const body = `Bus ${trip.bus?.number || 'Bus'} started ${trip.routeName || 'a trip'} at ${startedAtLabel}.`;
+
+            await Notification.create({
+                title,
+                body,
+                sender: req.user._id,
+                receivers: adminIds
+            });
+
+            await sendToUsers({
+                userIds: adminIds,
+                title,
+                body,
+                data: {
+                    type: 'TRIP_STARTED_ADMIN',
+                    tripId: String(tripId),
+                    routeName: trip.routeName || '',
+                    busNumber: trip.bus?.number || '',
+                    startedAt: startedAtIso
+                },
+                priority: 'normal'
+            });
+        }
+    } catch (err) {
+        console.log('Trip start admin notify error:', err.message);
     }
 
     res.status(200).json({ success: true, trip });
@@ -205,6 +249,43 @@ exports.endTrip = async (req, res) => {
             message: "Trip Completed. Thank you for riding!" 
         });
     } catch (err) { console.log("Socket Error:", err.message); }
+
+    // 5. Notify Admins (Dashboard + Push)
+    try {
+        const admins = await User.find({
+            role: { $in: ['admin', 'employee'] },
+            isActive: true,
+            status: 'approved'
+        }).select('_id').lean();
+
+        const adminIds = admins.map((u) => u._id);
+        if (adminIds.length) {
+            const title = 'Trip Ended';
+            const body = `Driver ${req.user?.name || ''} ended ${trip.routeName || 'a trip'} (${trip.bus?.number || 'Bus'}).`;
+
+            await Notification.create({
+                title,
+                body,
+                sender: req.user._id,
+                receivers: adminIds
+            });
+
+            await sendToUsers({
+                userIds: adminIds,
+                title,
+                body,
+                data: {
+                    type: 'TRIP_ENDED_ADMIN',
+                    tripId: String(tripId),
+                    routeName: trip.routeName || '',
+                    busNumber: trip.bus?.number || ''
+                },
+                priority: 'normal'
+            });
+        }
+    } catch (err) {
+        console.log('Trip end admin notify error:', err.message);
+    }
 
     res.status(200).json({ success: true, trip });
 
