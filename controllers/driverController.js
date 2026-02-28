@@ -259,7 +259,7 @@ exports.getTripManifest = async (req, res) => {
     // Boarded allows driver to see who is currently on the bus
     const bookings = await Booking.find({
       trip: tripId,
-      status: { $in: ['WAITING', 'BOARDED'] }
+      status: { $in: ['WAITING', 'BOARDED', 'NO_SHOW'] }
     })
     .populate('passenger', 'name phone profilePic')
     .sort({ 'pickupLocation.stopId': 1 }); 
@@ -287,14 +287,14 @@ exports.updatePassengerStatus = async (req, res) => {
     const { bookingId, status } = req.body; 
 
     // Strict validation
-    if (!['BOARDED', 'NO_SHOW', 'CANCELLED'].includes(status)) {
+    if (!['BOARDED', 'NO_SHOW'].includes(status)) {
         return res.status(400).json({ success: false, message: "Invalid Status" });
     }
 
     const booking = await Booking.findByIdAndUpdate(
       bookingId,
       { status: status },
-      { new: true }
+      { new: true, runValidators: true }
     ).populate('passenger', 'name');
 
     if (!booking) return res.status(404).json({ success: false, message: "Booking not found" });

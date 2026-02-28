@@ -44,7 +44,7 @@ exports.createBooking = async (req, res) => {
     // A. Double Booking Check
     const existingBooking = await Booking.findOne({
       passenger: passengerId,
-      status: { $in: ['WAITING', 'BOARDED'] }
+      status: { $in: ['WAITING'] }
     });
 
     if (existingBooking) {
@@ -149,8 +149,8 @@ exports.cancelBooking = async (req, res) => {
     });
 
     if (!booking) return res.status(404).json({ success: false, message: "Booking not found." });
-    if (['COMPLETED', 'CANCELLED'].includes(booking.status)) {
-      return res.status(400).json({ success: false, message: "Ride already ended." });
+    if (booking.status !== 'WAITING') {
+      return res.status(400).json({ success: false, message: "Only waiting bookings can be cancelled." });
     }
 
     booking.status = 'CANCELLED';
@@ -203,7 +203,7 @@ exports.getMyCurrentBooking = async (req, res) => {
   try {
     const currentBooking = await Booking.findOne({
       passenger: req.user._id,
-      status: { $in: ['WAITING', 'BOARDED'] }
+      status: { $in: ['WAITING', 'BOARDED', 'NO_SHOW'] }
     })
     .populate({
       path: 'trip',
@@ -252,7 +252,7 @@ exports.getDriverManifest = async (req, res) => {
 
     const activeBookings = await Booking.find({
       trip: tripId,
-      status: { $in: ['WAITING', 'BOARDED'] }
+      status: { $in: ['WAITING', 'BOARDED', 'NO_SHOW'] }
     }).populate('passenger', 'name phone');
 
     const manifest = trip.stops.map(stop => {
