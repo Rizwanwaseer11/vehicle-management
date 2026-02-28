@@ -7,7 +7,7 @@ const RESEND_API_KEY =
   readEnv('RESEND_API_KEY') || readEnv('Resend_Api_key') || readEnv('RESEND_KEY');
 
 const DEFAULT_FROM =
-  readEnv('RESEND_FROM') || 'OneLoveDrive <no-reply@onelovedrive.cloud>';
+  readEnv('RESEND_FROM') || 'OneLoveDrive <no-reply@mail.onelovedrive.cloud>';
 
 const RESEND_URL = 'https://api.resend.com/emails';
 
