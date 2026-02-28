@@ -9,10 +9,42 @@ const { otpEmail, profileChangedEmail, passwordChangedEmail } = require('../util
 const generateToken = (id) =>
   jwt.sign({ id }, process.env.JWT_SECRET, { expiresIn: process.env.JWT_EXPIRE });
 
+const registerSchema = Joi.object({
+  name: Joi.string().min(2).max(80).required(),
+  email: Joi.string().email().required(),
+  phone: Joi.string().min(7).max(20).required(),
+  password: Joi.string().min(6).required(),
+  role: Joi.string().valid('passenger', 'driver').default('passenger'),
+  roomNumber: Joi.when('role', {
+    is: 'passenger',
+    then: Joi.string().trim().min(1).required(),
+    otherwise: Joi.forbidden()
+  }),
+  jobSite: Joi.when('role', {
+    is: 'passenger',
+    then: Joi.string().trim().min(1).required(),
+    otherwise: Joi.forbidden()
+  }),
+  homeAddress: Joi.when('role', {
+    is: 'driver',
+    then: Joi.string().trim().min(1).required(),
+    otherwise: Joi.forbidden()
+  }),
+  licenseNumber: Joi.when('role', {
+    is: 'driver',
+    then: Joi.string().trim().min(1).required(),
+    otherwise: Joi.forbidden()
+  }),
+}).unknown(false);
+
 const updateSchema = Joi.object({
   name: Joi.string().min(2).max(80).optional(),
   email: Joi.string().email().optional(),
   phone: Joi.string().min(7).max(20).optional(),
+  roomNumber: Joi.string().trim().min(1).optional(),
+  jobSite: Joi.string().trim().min(1).optional(),
+  homeAddress: Joi.string().trim().min(1).optional(),
+  licenseNumber: Joi.string().trim().min(1).optional(),
   currentPassword: Joi.string().min(6).optional(),
   newPassword: Joi.string().min(6).optional(),
   confirmPassword: Joi.string().min(6).optional(),
@@ -31,7 +63,12 @@ const resetSchema = Joi.object({
 
 exports.register = async (req, res) => {
   try {
-    const { name, email, password, phone, role } = req.body;
+    const { error, value } = registerSchema.validate(req.body);
+    if (error) {
+      return res.status(400).json({ message: error.details?.[0]?.message || 'Invalid input' });
+    }
+
+    const { name, email, password, phone, role, roomNumber, jobSite, homeAddress, licenseNumber } = value;
 
     // Check if user already exists
     const exists = await User.findOne({ email });
@@ -46,6 +83,10 @@ exports.register = async (req, res) => {
       password,
       phone,
       role,
+      roomNumber: role === 'passenger' ? roomNumber : undefined,
+      jobSite: role === 'passenger' ? jobSite : undefined,
+      homeAddress: role === 'driver' ? homeAddress : undefined,
+      licenseNumber: role === 'driver' ? licenseNumber : undefined,
       status: 'pending' // <-- added
     });
 
@@ -58,6 +99,10 @@ exports.register = async (req, res) => {
         email: user.email,
         phone: user.phone,
         role: user.role,
+        roomNumber: user.roomNumber,
+        jobSite: user.jobSite,
+        homeAddress: user.homeAddress,
+        licenseNumber: user.licenseNumber,
         status: user.status
       }
     });
@@ -99,6 +144,10 @@ exports.login = async (req, res) => {
       email: user.email,
       phone: user.phone,
       role: user.role,
+      roomNumber: user.roomNumber,
+      jobSite: user.jobSite,
+      homeAddress: user.homeAddress,
+      licenseNumber: user.licenseNumber,
       token: generateToken(user._id)
     });
 
@@ -115,7 +164,18 @@ exports.updateProfile = async (req, res) => {
       return res.status(400).json({ message: error.details?.[0]?.message || 'Invalid input' });
     }
 
-    const { name, email, phone, currentPassword, newPassword, confirmPassword } = value;
+    const {
+      name,
+      email,
+      phone,
+      roomNumber,
+      jobSite,
+      homeAddress,
+      licenseNumber,
+      currentPassword,
+      newPassword,
+      confirmPassword
+    } = value;
 
     const user = await User.findById(req.user._id);
     if (!user) return res.status(404).json({ message: 'User not found' });
@@ -140,6 +200,28 @@ exports.updateProfile = async (req, res) => {
       }
       user.email = email;
       changes.push('Email updated');
+    }
+
+    if (user.role === 'passenger') {
+      if (roomNumber && roomNumber !== user.roomNumber) {
+        user.roomNumber = roomNumber;
+        changes.push('Room number updated');
+      }
+      if (jobSite && jobSite !== user.jobSite) {
+        user.jobSite = jobSite;
+        changes.push('Job site updated');
+      }
+    }
+
+    if (user.role === 'driver') {
+      if (homeAddress && homeAddress !== user.homeAddress) {
+        user.homeAddress = homeAddress;
+        changes.push('Home address updated');
+      }
+      if (licenseNumber && licenseNumber !== user.licenseNumber) {
+        user.licenseNumber = licenseNumber;
+        changes.push('License number updated');
+      }
     }
 
     if (currentPassword || newPassword || confirmPassword) {
@@ -167,6 +249,10 @@ exports.updateProfile = async (req, res) => {
           email: user.email,
           phone: user.phone,
           role: user.role,
+          roomNumber: user.roomNumber,
+          jobSite: user.jobSite,
+          homeAddress: user.homeAddress,
+          licenseNumber: user.licenseNumber,
         },
       });
     }
@@ -211,6 +297,10 @@ exports.updateProfile = async (req, res) => {
         email: user.email,
         phone: user.phone,
         role: user.role,
+        roomNumber: user.roomNumber,
+        jobSite: user.jobSite,
+        homeAddress: user.homeAddress,
+        licenseNumber: user.licenseNumber,
       },
     });
   } catch (error) {

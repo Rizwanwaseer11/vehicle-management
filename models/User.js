@@ -8,6 +8,12 @@ const userSchema = new mongoose.Schema({
   password: { type: String, required: true },
   role: { type: String, enum: ['admin','employee', 'driver', 'passenger'], default: 'passenger' },
   profilePic: { type: String },
+  // Passenger-only fields
+  roomNumber: { type: String, trim: true },
+  jobSite: { type: String, trim: true },
+  // Driver-only fields
+  homeAddress: { type: String, trim: true },
+  licenseNumber: { type: String, trim: true },
   isActive: { type: Boolean, default: true },
   status: { type: String, enum: ['pending', 'approved', 'rejected'], default: 'pending' }
 }, { timestamps: true });
