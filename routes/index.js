@@ -6,6 +6,7 @@ router.use('/auth', require('./authRoutes'));
 router.use('/admin', require('./adminRoutes')); // Admin only
 router.use('/trips', require('./tripRoutes')); // Admin only
 router.use('/buses' , require('./busRoutes'));
+router.use('/bookings', require('./bookingRoutes'));
 
 router.use('/messages', require('./messageRoutes')); // All roles
 router.use('/notifications', require('./notificationRoutes')); // Admin send / all read

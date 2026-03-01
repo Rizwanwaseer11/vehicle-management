@@ -3,6 +3,7 @@ const Booking = require('../models/Booking');
 const Trip = require('../models/Trip');
 const { getIO } = require('../utils/socket');
 const Notification = require('../models/Notification');
+const User = require('../models/User');
 const { sendToUsers } = require('../utils/pushService');
 // const { getIO } = require('../sockets/socketHandler');
 
@@ -128,6 +129,45 @@ exports.createBooking = async (req, res) => {
       console.log('New booking push error:', err.message);
     }
 
+    // G. Notify Admins (Dashboard + Push)
+    try {
+      const admins = await User.find({
+        role: { $in: ['admin', 'employee'] },
+        isActive: true,
+        status: 'approved'
+      }).select('_id').lean();
+
+      const adminIds = admins.map((u) => u._id);
+      if (adminIds.length) {
+        const title = 'New Booking';
+        const body = `${req.user?.name || 'Passenger'} booked ${selectedStop.name} on ${trip.routeName || 'a route'}.`;
+
+        await Notification.create({
+          title,
+          body,
+          sender: passengerId,
+          receivers: adminIds
+        });
+
+        await sendToUsers({
+          userIds: adminIds,
+          title,
+          body,
+          data: {
+            type: 'NEW_BOOKING_ADMIN',
+            tripId: String(trip._id),
+            bookingId: String(newBooking._id),
+            routeName: trip.routeName || '',
+            busNumber: trip.bus?.number || '',
+            stopName: selectedStop.name
+          },
+          priority: 'normal'
+        });
+      }
+    } catch (err) {
+      console.log('New booking admin notify error:', err.message);
+    }
+
     res.status(201).json({ success: true, booking: newBooking });
 
   } catch (error) {
@@ -238,6 +278,157 @@ exports.getMyBookings = async (req, res) => {
     res.status(200).json({ success: true, count: bookings.length, data: bookings });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+// ==========================================
+// 7. ADMIN: GET ALL BOOKINGS (Filters + Paging)
+// ==========================================
+exports.getAllBookingsAdmin = async (req, res) => {
+  try {
+    const {
+      date,
+      startDate,
+      endDate,
+      busNumber,
+      routeName,
+      stopName,
+      passengerName,
+      driverName,
+      status,
+      page = 1,
+      limit = 20
+    } = req.query;
+
+    const query = {};
+
+    if (status) {
+      query.status = status;
+    }
+
+    if (busNumber) {
+      query.busNumber = { $regex: busNumber.trim(), $options: "i" };
+    }
+
+    if (routeName) {
+      query.groupName = { $regex: routeName.trim(), $options: "i" };
+    }
+
+    if (stopName) {
+      query["pickupLocation.name"] = { $regex: stopName.trim(), $options: "i" };
+    }
+
+    if (driverName) {
+      query.driverName = { $regex: driverName.trim(), $options: "i" };
+    }
+
+    if (date) {
+      const start = new Date(date);
+      const end = new Date(date);
+      start.setHours(0, 0, 0, 0);
+      end.setHours(23, 59, 59, 999);
+      query.date = { $gte: start, $lte: end };
+    } else if (startDate || endDate) {
+      const range = {};
+      if (startDate) {
+        const start = new Date(startDate);
+        start.setHours(0, 0, 0, 0);
+        range.$gte = start;
+      }
+      if (endDate) {
+        const end = new Date(endDate);
+        end.setHours(23, 59, 59, 999);
+        range.$lte = end;
+      }
+      if (Object.keys(range).length) {
+        query.date = range;
+      }
+    }
+
+    if (passengerName) {
+      const passengers = await User.find({
+        name: { $regex: passengerName.trim(), $options: "i" },
+        role: "passenger"
+      }).select("_id").lean();
+      const ids = passengers.map((p) => p._id);
+      query.passenger = { $in: ids };
+    }
+
+    const pageNum = Math.max(parseInt(page, 10) || 1, 1);
+    const limitNum = Math.min(Math.max(parseInt(limit, 10) || 20, 1), 100);
+    const skip = (pageNum - 1) * limitNum;
+
+    const [total, data] = await Promise.all([
+      Booking.countDocuments(query),
+      Booking.find(query)
+        .populate("passenger", "name email phone")
+        .sort({ date: -1 })
+        .skip(skip)
+        .limit(limitNum)
+    ]);
+
+    res.status(200).json({
+      success: true,
+      total,
+      count: data.length,
+      page: pageNum,
+      pages: Math.ceil(total / limitNum),
+      data
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+// ==========================================
+// 8. ADMIN: UPDATE BOOKING STATUS ONLY
+// ==========================================
+exports.updateBookingStatusAdmin = async (req, res) => {
+  try {
+    const { status } = req.body;
+    if (!['WAITING', 'BOARDED', 'NO_SHOW', 'CANCELLED'].includes(status)) {
+      return res.status(400).json({ success: false, message: "Invalid status" });
+    }
+
+    const booking = await Booking.findByIdAndUpdate(
+      req.params.id,
+      { status },
+      { new: true, runValidators: true }
+    ).populate("passenger", "name");
+
+    if (!booking) {
+      return res.status(404).json({ success: false, message: "Booking not found" });
+    }
+
+    try {
+      const title = 'Booking Status Updated';
+      const body = `Your booking status is now ${status}.`;
+      await Notification.create({
+        title,
+        body,
+        sender: req.user._id,
+        receivers: [booking.passenger?._id]
+      });
+      if (booking.passenger?._id) {
+        await sendToUsers({
+          userIds: [booking.passenger._id],
+          title,
+          body,
+          data: {
+            type: 'BOOKING_STATUS_UPDATED',
+            bookingId: String(booking._id),
+            status
+          },
+          priority: 'normal'
+        });
+      }
+    } catch (e) {
+      console.log('Admin status notify error:', e.message);
+    }
+
+    res.status(200).json({ success: true, booking });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
   }
 };
 

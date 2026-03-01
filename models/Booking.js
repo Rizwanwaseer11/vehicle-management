@@ -40,5 +40,11 @@ const bookingSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 bookingSchema.index({ passenger: 1, date: -1 });
+bookingSchema.index({ status: 1, date: -1 });
+bookingSchema.index({ busNumber: 1, date: -1 });
+bookingSchema.index({ groupName: 1, date: -1 });
+bookingSchema.index({ driverName: 1, date: -1 });
+bookingSchema.index({ "pickupLocation.name": 1, date: -1 });
+bookingSchema.index({ trip: 1, date: -1 });
 
 module.exports = mongoose.model('Booking', bookingSchema);
