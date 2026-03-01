@@ -10,12 +10,14 @@ const Trip = require('../models/Trip');
 exports.createBus = async (req, res) => {
   try {
     const { number, model, seatingCapacity } = req.body;
+    const normalizedNumber = typeof number === 'string' ? number.trim().toUpperCase() : '';
+    const normalizedModel = typeof model === 'string' ? model.trim().toUpperCase() : '';
 
     // Manual validation
-    if (!number || typeof number !== 'string' || number.trim() === '') {
+    if (!number || typeof number !== 'string' || normalizedNumber === '') {
       return res.status(400).json({ message: 'Bus number is required and must be a string' });
     }
-    if (!model || typeof model !== 'string' || model.trim() === '') {
+    if (!model || typeof model !== 'string' || normalizedModel === '') {
       return res.status(400).json({ message: 'Bus model is required and must be a string' });
     }
     if (seatingCapacity === undefined || seatingCapacity === null || typeof seatingCapacity !== 'number' || seatingCapacity < 1) {
@@ -23,7 +25,7 @@ exports.createBus = async (req, res) => {
     }
 
     // Check if bus number exists
-    const existingBus = await Bus.findOne({ number: number.trim() });
+    const existingBus = await Bus.findOne({ number: normalizedNumber });
     if (existingBus) {
       return res.status(400).json({ message: 'Bus with this number already exists' });
     }
@@ -35,7 +37,7 @@ exports.createBus = async (req, res) => {
     // }
 
     // Create bus
-    const bus = await Bus.create({ number: number.trim(), model: model.trim(), seatingCapacity });
+    const bus = await Bus.create({ number: normalizedNumber, model: normalizedModel, seatingCapacity });
     res.status(201).json({ message: 'Bus created successfully', bus });
 
   } catch (err) {
@@ -99,9 +101,11 @@ exports.editBus =  async (req, res) => {
     if (!bus) return res.status(404).json({ message: 'Bus not found' });
 
     const { number, model, seatingCapacity } = req.body;
+    const normalizedNumber = typeof number === 'string' ? number.trim().toUpperCase() : '';
+    const normalizedModel = typeof model === 'string' ? model.trim().toUpperCase() : '';
 
-    if (number && typeof number === 'string' && number.trim() !== '') bus.number = number.trim();
-    if (model && typeof model === 'string' && model.trim() !== '') bus.model = model.trim();
+    if (number && typeof number === 'string' && normalizedNumber !== '') bus.number = normalizedNumber;
+    if (model && typeof model === 'string' && normalizedModel !== '') bus.model = normalizedModel;
     if (seatingCapacity && typeof seatingCapacity === 'number' && seatingCapacity > 0) bus.seatingCapacity = seatingCapacity;
 
     await bus.save();
