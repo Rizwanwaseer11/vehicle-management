@@ -22,6 +22,11 @@ const initScheduler = require('./utils/scheduler');
 
 const PORT = process.env.PORT || 5000;
 const MONGO_URI = process.env.MONGO_URI;
+const shouldRunSchedulerInApi = process.env.RUN_SCHEDULER_IN_API === 'true';
+
+if (!MONGO_URI || typeof MONGO_URI !== 'string') {
+  throw new Error('MONGO_URI is missing. Set it in environment variables.');
+}
 
 // ----- Allow OPTIONS helper -----
 const allowOptions = (limiter) => (req, res, next) => {
@@ -39,11 +44,23 @@ const limiter = rateLimit({
 });
 
 // ----- Allowed origins -----
-const allowedOrigins = [
-  'https://vehicle-management-front-end.vercel.app',
-  'http://localhost:5173',
-  '*' // Temporarily helpful for mobile apps if strictly defined origins fail
-];
+const allowedOrigins = (process.env.CORS_ORIGINS ||
+  'https://vehicle-management-front-end.vercel.app,http://localhost:5173')
+  .split(',')
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+
+const corsOptions = {
+  origin: (origin, callback) => {
+    // Allow server-to-server and health checks without browser origin.
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.includes(origin)) return callback(null, true);
+    return callback(new Error('Not allowed by CORS'));
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+};
 
 (async () => {
   // Connect MongoDB
@@ -57,12 +74,7 @@ const allowedOrigins = [
   app.set('trust proxy', 1);
 
   // ----- CORS -----
-  app.use(cors({
-    origin: allowedOrigins,
-    credentials: true,
-    methods: ['GET','POST','PUT','DELETE','OPTIONS'],
-    allowedHeaders: ['Content-Type','Authorization']
-  }));
+  app.use(cors(corsOptions));
 
   // ----- Core middlewares -----
   app.use(helmet());
@@ -100,7 +112,12 @@ const allowedOrigins = [
 
 
   // ----- Start Server -----
-  initScheduler(); // Start the Scheduler when server starts
+  if (shouldRunSchedulerInApi) {
+    initScheduler();
+    logger.info('[Scheduler] Running inside API process (RUN_SCHEDULER_IN_API=true).');
+  } else {
+    logger.info('[Scheduler] Not started in API process. Use dedicated scheduler worker.');
+  }
   
   server.listen(PORT, () => logger.info(`Worker PID ${process.pid} listening on ${PORT}`));
 })();

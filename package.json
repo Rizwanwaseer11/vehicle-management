@@ -6,6 +6,10 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "start": "node server.js",
+    "start:api": "node server.js",
+    "start:scheduler": "node schedulerWorker.js",
+    "start:pm2": "pm2 start ecosystem.config.js",
+    "reload:pm2": "pm2 reload ecosystem.config.js",
     "dev": "nodemon server.js"
   },
   "keywords": [],

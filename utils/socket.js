@@ -7,6 +7,11 @@ const { createAdapter } = require("@socket.io/redis-adapter");
 const Redis = require("ioredis");
 
 let io = null;
+const socketAllowedOrigins = (process.env.CORS_ORIGINS ||
+  "https://vehicle-management-front-end.vercel.app,http://localhost:5173")
+  .split(",")
+  .map((origin) => origin.trim())
+  .filter(Boolean);
 
 const buildRedisClient = (url) =>
   new Redis(url, {
@@ -21,7 +26,15 @@ module.exports = {
     console.log("🔌 Initializing Socket.io...");
 
     io = new Server(httpServer, {
-      cors: { origin: "*", methods: ["GET", "POST"] },
+      cors: {
+        origin: (origin, callback) => {
+          if (!origin) return callback(null, true);
+          if (socketAllowedOrigins.includes(origin)) return callback(null, true);
+          return callback(new Error("Not allowed by CORS"));
+        },
+        methods: ["GET", "POST"],
+        credentials: true
+      },
       transports: ["websocket", "polling"],
 
       // Better mobile stability
