@@ -4,7 +4,18 @@ const Trip = require('../models/Trip');
 
 const LOCK_KEY = 'scheduler:trip-reactivation:midnight-lock';
 const LOCK_TTL_SECONDS = 600;
-const DEFAULT_TIMEZONE = process.env.TZ || 'America/New_York';
+const CLIENT_TIMEZONE = 'America/Chicago'; // Alabama (Central Time)
+
+const resolveSchedulerTimezone = () => {
+  const candidate = process.env.SCHEDULER_TIMEZONE || process.env.TZ || CLIENT_TIMEZONE;
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: candidate });
+    return candidate;
+  } catch (error) {
+    console.error(`[Scheduler] Invalid timezone "${candidate}". Falling back to ${CLIENT_TIMEZONE}.`);
+    return CLIENT_TIMEZONE;
+  }
+};
 
 let redisClient = null;
 
@@ -108,7 +119,7 @@ const reactivateRecurringTrips = async () => {
 };
 
 const initScheduler = () => {
-  const timezone = process.env.SCHEDULER_TIMEZONE || DEFAULT_TIMEZONE;
+  const timezone = resolveSchedulerTimezone();
   console.log(`[Scheduler] Initialized. Daily recurring reactivation at 00:01 (${timezone}).`);
 
   cron.schedule(
