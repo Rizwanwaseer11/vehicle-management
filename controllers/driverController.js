@@ -102,12 +102,14 @@ exports.startTrip = async (req, res) => {
     }
 
     // 4. Proceed to Start
+    // Keep admin-defined scheduled startTime unchanged.
+    // This preserves recurrence timing and 15-minute guard reliability.
     const trip = await Trip.findByIdAndUpdate(
         tripId,
-        { status: 'ONGOING', startTime: new Date(), isActive: true }, 
+        { status: 'ONGOING', isActive: true }, 
         { new: true }
     ).populate('bus', 'number model');
-    const startedAt = trip.startTime || new Date();
+    const startedAt = now;
     const startedAtIso = new Date(startedAt).toISOString();
     const startedAtLabel = new Date(startedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 

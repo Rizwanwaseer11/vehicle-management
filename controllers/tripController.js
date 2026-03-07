@@ -3,6 +3,14 @@ const User = require('../models/User');
 const Bus = require('../models/Bus');
 const Booking = require('../models/Booking');
 
+const ALLOWED_RECURRENCES = ['NONE', 'DAILY', 'WEEKDAYS', 'WEEKENDS'];
+
+const normalizeRecurrence = (value) => {
+  if (!value) return 'NONE';
+  const normalized = String(value).trim().toUpperCase();
+  return ALLOWED_RECURRENCES.includes(normalized) ? normalized : null;
+};
+
 // ==========================================
 // 1. CREATE TRIP (STRICT VALIDATION)
 // ==========================================
@@ -41,24 +49,28 @@ exports.createTrip = async (req, res) => {
         if (s.order === undefined || s.order === null) return res.status(400).json({ error: `Stop '${s.name}' is missing Order.` });
     }
 
-    // --- 🚨 STEP 3: CONFLICT CHECK (Resources) ---
-    // If this is a REAL trip (not a template), check if driver/bus are busy
-    const isTemplate = recurrence && recurrence !== 'NONE';
-    
-    if (!isTemplate) {
-        const conflict = await Trip.findOne({
-            $or: [{ driver: driver }, { bus: bus }],
-            status: 'ONGOING' 
-        });
-        if (conflict) {
-            return res.status(409).json({ error: "Driver or Bus is currently assigned to an ONGOING trip." });
-        }
+    // --- 🚨 STEP 3: VALIDATE RECURRENCE ---
+    const normalizedRecurrence = normalizeRecurrence(recurrence);
+    if (!normalizedRecurrence) {
+      return res.status(400).json({
+        error: `Invalid recurrence. Allowed values: ${ALLOWED_RECURRENCES.join(', ')}`
+      });
     }
 
+    // --- 🚨 STEP 4: CONFLICT CHECK (Resources) ---
+    // Keep strict ONGOING conflict rule for all trip types.
+    const conflict = await Trip.findOne({
+      $or: [{ driver: driver }, { bus: bus }],
+      status: 'ONGOING'
+    });
+    if (conflict) {
+      return res.status(409).json({ error: "Driver or Bus is currently assigned to an ONGOING trip." });
+    }
+
+    const isTemplate = normalizedRecurrence !== 'NONE';
+
     // --- STEP 4: SAVE ---
-    // ✅ LOGIC FIX:
-    // 1. If 'Daily/Weekday' (Template) -> isActive: FALSE (Wait for Scheduler)
-    // 2. If 'None' (One-Time/Emergency) -> isActive: TRUE (Driver sees it NOW)
+    // All trips are active immediately after creation.
     
     const trip = await Trip.create({
       driver,
@@ -73,18 +85,16 @@ exports.createTrip = async (req, res) => {
       totalKm: Number(totalKm),
       startTime: new Date(startTime),
       polyline: routePolyline,
-      recurrence: recurrence || 'NONE',
+      recurrence: normalizedRecurrence,
       isTemplate: isTemplate,
-      
-      // ✅ DYNAMIC ACTIVE STATUS
-      isActive: !isTemplate, 
-      
+
+      isActive: true,
       status: 'SCHEDULED'
     });
 
     return res.status(201).json({
       success: true,
-      message: isTemplate ? "Schedule Template Created (Hidden until Midnight)" : "Emergency Trip Created (Active Now)",
+      message: "Trip created and activated successfully.",
       trip
     });
 
@@ -208,14 +218,17 @@ exports.updateTrip = async (req, res) => {
        }
     }
 
-    // --- 🚨 STEP 3: PREPARE UPDATE (Fixing Logic Here) ---
-    // 1. Determine if it's a template (Daily/Weekdays)
-    const isTemplate = recurrence && recurrence !== 'NONE';
+    // --- 🚨 STEP 3: PREPARE UPDATE ---
+    const normalizedRecurrence = normalizeRecurrence(recurrence);
+    if (!normalizedRecurrence) {
+      return res.status(400).json({
+        error: `Invalid recurrence. Allowed values: ${ALLOWED_RECURRENCES.join(', ')}`
+      });
+    }
 
-    // 2. ✅ CRITICAL FIX: Update 'isActive' based on the new recurrence type
-    // If Admin changes it to DAILY/WEEKDAYS -> isActive becomes FALSE (Hidden)
-    // If Admin changes it to NONE -> isActive becomes TRUE (Visible)
-    const isActive = !isTemplate; 
+    const isTemplate = normalizedRecurrence !== 'NONE';
+    const nextStatus = status || 'SCHEDULED';
+    const nextIsActive = !['COMPLETED', 'CANCELLED'].includes(nextStatus);
 
     const updateData = {
       driver, 
@@ -224,10 +237,10 @@ exports.updateTrip = async (req, res) => {
       totalKm: Number(totalKm), 
       startTime: new Date(startTime),
       polyline: routePolyline,
-      recurrence: recurrence || 'NONE',
+      recurrence: normalizedRecurrence,
       isTemplate: isTemplate,
-      isActive: isActive, // ✅ Updated Logic applied here
-      status: status, 
+      isActive: nextIsActive,
+      status: nextStatus,
       stops: stops.map(s => ({
         name: s.name,
         latitude: Number(s.latitude),
@@ -242,7 +255,7 @@ exports.updateTrip = async (req, res) => {
 
     res.status(200).json({ 
         success: true, 
-        message: isTemplate ? "Schedule Updated (Hidden Template)" : "Trip Updated (Active Now)", 
+        message: "Trip updated successfully.",
         trip: updatedTrip 
     });
 

@@ -11,7 +11,8 @@ const tripSchema = new mongoose.Schema({
   // ==================================================
   // 1. AUTOMATION FIELDS (The "Brain")
   // ==================================================
-  // True = This is a Blueprint. False = This is a real trip.
+  // Legacy field kept for compatibility with existing clients.
+  // Recurring trips can still be active/bookable records.
   isTemplate: { type: Boolean, default: false, index: true }, 
 
   // Frequency: 'NONE' (One-time), 'DAILY', 'WEEKDAYS', 'WEEKENDS'
@@ -21,7 +22,7 @@ const tripSchema = new mongoose.Schema({
     default: 'NONE' 
   },
 
-  // Links a daily trip back to its master template
+  // Legacy relation field (not used when recurring trips are reactivated in place).
   parentTripId: { type: mongoose.Schema.Types.ObjectId, ref: 'Trip', default: null },
 
   // ==================================================
@@ -42,8 +43,8 @@ const tripSchema = new mongoose.Schema({
   // ==================================================
   stops: [stopSchema], 
 
-  // True = Visible to Scheduler/Passengers. False = Disabled/Hidden.
-  isActive: { type: Boolean, default: false }, 
+  // True = Bookable/visible for users. False = hidden/inactive.
+  isActive: { type: Boolean, default: true }, 
 
   status: {
     type: String,
@@ -65,5 +66,6 @@ const tripSchema = new mongoose.Schema({
 // Indexes for high-performance searching
 tripSchema.index({ driver: 1, status: 1 });
 tripSchema.index({ isTemplate: 1, isActive: 1 });
+tripSchema.index({ recurrence: 1, isActive: 1 });
 
 module.exports = mongoose.model('Trip', tripSchema);
